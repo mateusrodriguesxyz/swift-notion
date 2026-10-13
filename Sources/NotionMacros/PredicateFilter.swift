@@ -17,10 +17,17 @@ public enum NotionFilterConversionError: Error, Equatable, Sendable {
     case unsupportedOperands(String)
 }
 
-/// A node that composes to a complete `NotionFilter` (root expressions: `Equal` now;
-/// `Negation`, `Conjunction`, `Disjunction` in later increments).
+/// A node that composes to a complete `NotionFilter` (root expressions: `Equal`,
+/// `SequenceContains`, and `Negation` of a negatable leaf).
 protocol NotionFilterExpression {
     func notionFilter() throws -> NotionFilter
+}
+
+/// A node whose filter has a direct negated counterpart in Notion (title
+/// `does_not_equal`, relation `does_not_contain`). Notion has no generic NOT, so
+/// only leaves with such a counterpart can be negated.
+protocol NotionNegatableExpression {
+    func negatedFilter() throws -> NotionFilter
 }
 
 /// A node that resolves to one side of a comparison (`Value`, `KeyPath`).
@@ -65,8 +72,8 @@ extension PredicateExpressions.KeyPath: NotionFilterOperandExpression where Root
         // Captured value key path (e.g. `artist.id`): evaluate it to a literal. Only
         // reachable for a `Value` root, which Foundation already required to be
         // `Codable`; a `Variable` root throws here (no bindings) and is reported below.
-        if let value = try? evaluate(PredicateBindings()), let operand = value as? any NotionFilterOperand {
-            print("value = \(value)")
+        if let value = try? evaluate(PredicateBindings()),
+           let operand = value as? any NotionFilterOperand {
             return operand.filterOperand()
         }
         throw NotionFilterConversionError.unsupportedField("\(keyPath)")
@@ -74,9 +81,12 @@ extension PredicateExpressions.KeyPath: NotionFilterOperandExpression where Root
 }
 
 @available(macOS 14.0, iOS 17.0, *)
-extension PredicateExpressions.Equal: NotionFilterExpression
+extension PredicateExpressions.Equal: NotionFilterExpression, NotionNegatableExpression
 where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
-    func notionFilter() throws -> NotionFilter {
+    func notionFilter() throws -> NotionFilter { try filter(negated: false) }
+    func negatedFilter() throws -> NotionFilter { try filter(negated: true) }
+
+    private func filter(negated: Bool) throws -> NotionFilter {
         let left = try lhs.operand()
         let right = try rhs.operand()
         switch (left, right) {
@@ -84,19 +94,23 @@ where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
             guard field.kind == .title else {
                 throw NotionFilterConversionError.unsupportedField(field.name)
             }
-            return .title(field.name, .equals(value))
+            return .title(field.name, negated ? .doesNotEqual(value) : .equals(value))
         default:
             throw NotionFilterConversionError.unsupportedOperands("\(left) vs \(right)")
         }
     }
 }
 
-/// `$0.relationIDs.contains(id)` -> a `relation` `contains` filter. The
-/// `SequenceContains` node stores its sides as `sequence` and `element`.
+/// `$0.relationIDs.contains(id)` -> a `relation` `contains` filter (or
+/// `does_not_contain` when negated). The `SequenceContains` node stores its sides
+/// as `sequence` and `element`.
 @available(macOS 14.0, iOS 17.0, *)
-extension PredicateExpressions.SequenceContains: NotionFilterExpression
+extension PredicateExpressions.SequenceContains: NotionFilterExpression, NotionNegatableExpression
 where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
-    func notionFilter() throws -> NotionFilter {
+    func notionFilter() throws -> NotionFilter { try filter(negated: false) }
+    func negatedFilter() throws -> NotionFilter { try filter(negated: true) }
+
+    private func filter(negated: Bool) throws -> NotionFilter {
         let lhs = try sequence.operand()
         let rhs = try element.operand()
         switch (lhs, rhs) {
@@ -104,16 +118,25 @@ where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
             guard field.kind == .relation else {
                 throw NotionFilterConversionError.unsupportedField(field.name)
             }
-            return .relation(field.name, .contains(id))
+            return .relation(field.name, negated ? .doesNotContain(id) : .contains(id))
         default:
             throw NotionFilterConversionError.unsupportedOperands("\(lhs) vs \(rhs)")
         }
     }
 }
 
+/// `!<leaf>` -> the leaf's negated counterpart. Only leaves that are
+/// `NotionNegatableExpression` convert; anything else fails the root cast.
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.Negation: NotionFilterExpression
+where Wrapped: NotionNegatableExpression {
+    func notionFilter() throws -> NotionFilter { try wrapped.negatedFilter() }
+}
+
 /// Converts a `Predicate` over a `NotionPage` type into a `NotionFilter` by
 /// tree-walking its expression. Supported root nodes are `Equal` (title
-/// equality) and `SequenceContains` (relation `contains`); every other shape
+/// equality), `SequenceContains` (relation `contains`) and `Negation` of either
+/// (title `does_not_equal`, relation `does_not_contain`); every other shape
 /// throws `NotionFilterConversionError`.
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {

@@ -281,11 +281,46 @@ do {
             "captured-id predicate encodes to Notion shape"
         )
 
+        let negatedRelationPredicate = #Predicate<ArtDTO> { !$0.artistIDs.contains(artistID) }
+        let negatedRelationFilter = try notionFilter(negatedRelationPredicate)
+        check(
+            negatedRelationFilter == .relation("Artistas", .doesNotContain(artistID)),
+            "negated relation contains converts to does_not_contain"
+        )
+        check(
+            encodedFilter(negatedRelationFilter) == normalizedJSON(["property": "Artistas", "relation": ["does_not_contain": "4d195b29-4b07-41de-8029-6c0d9e607e4b"]]),
+            "negated relation filter encodes to Notion shape"
+        )
+
+        let negatedTitlePredicate = #Predicate<ArtDTO> { !($0.name == "Obra Teste") }
+        let negatedTitleFilter = try notionFilter(negatedTitlePredicate)
+        check(
+            negatedTitleFilter == .title("Nome", .doesNotEqual("Obra Teste")),
+            "negated title equality converts to does_not_equal"
+        )
+        check(
+            encodedFilter(negatedTitleFilter) == normalizedJSON(["property": "Nome", "title": ["does_not_equal": "Obra Teste"]]),
+            "negated title filter encodes to Notion shape"
+        )
+
+        let negatedCapturedPredicate = #Predicate<ArtDTO> { !$0.artistIDs.contains(capturedArtist.id) }
+        check(
+            try notionFilter(negatedCapturedPredicate) == .relation("Artistas", .doesNotContain(capturedArtist.id)),
+            "negated predicate resolves a captured DTO id key path to a literal"
+        )
+
         do {
             _ = try notionFilter(#Predicate<ArtDTO> { $0.description == "Descrição" })   // .richText, out of scope
             check(false, "richText equality rejects in increment 2")
         } catch NotionFilterConversionError.unsupportedField {
             check(true, "non-title equality rejects as unsupportedField")
+        }
+
+        do {
+            _ = try notionFilter(#Predicate<ArtDTO> { !($0.description == "Descrição") })   // .richText, not negatable
+            check(false, "negated richText equality rejects")
+        } catch NotionFilterConversionError.unsupportedField {
+            check(true, "negated non-title equality rejects as unsupportedField")
         }
 
         do {
