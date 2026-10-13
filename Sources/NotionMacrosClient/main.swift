@@ -1,0 +1,304 @@
+import NotionMacros
+import Foundation
+
+@NotionPage
+struct ArtistDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionProperty("Bio") var bio: String
+    @NotionProperty("Foto") var photoURL: URL?
+}
+
+@NotionPage
+struct ArtDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionProperty("Foto Principal") var mainPhotoURL: URL?
+    @NotionProperty("Fotos Extras") var extraPhotoURLs: [URL]
+    @NotionProperty("Descrição") var description: String
+    @NotionProperty("Evento") var event: String
+    @NotionProperty("Endereço") var address: String
+    @NotionProperty("Coordenadas") var coordinates: String
+    @NotionProperty("Data") var date: Date?
+    @NotionRelationIDs("Artistas") var artistIDs: [UUID]
+}
+
+@NotionPage
+struct EventDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionDateRange("Data") var period: Range<Date>?
+    @NotionDateStart("Início") var start: Date?
+    @NotionRelationIDs("Convidados") var guestIDs: [UUID]
+}
+
+/// A `@NotionPage` type made `Encodable` by hand: the macro-generated `CodingKeys`
+/// carries a `properties` case with no stored property, so auto-synthesis is
+/// unavailable. `Encodable` is what lets a captured `capturedArtist.id` build a
+/// `#Predicate` (`Value<Output>` is a `StandardPredicateExpression` only when
+/// `Output` is `Codable`).
+@NotionPage
+struct CapturedArtistDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+}
+
+extension CapturedArtistDTO: Encodable {
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+    }
+}
+
+struct ListResponse<T: Decodable>: Decodable {
+    let results: [T]
+}
+
+let artistsJSON = """
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "page",
+      "id": "11111111-1111-1111-1111-111111111111",
+      "properties": {
+        "Nome": { "type": "title", "title": [ { "plain_text": "Artista Teste" } ] },
+        "Bio": { "type": "rich_text", "rich_text": [ { "plain_text": "Bio teste" } ] },
+        "Foto": { "type": "files", "files": [ { "name": "foto", "file": { "url": "https://example.com/artista.jpg" } } ] }
+      }
+    }
+  ]
+}
+""".data(using: .utf8)!
+
+let artsJSON = """
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "page",
+      "id": "22222222-2222-2222-2222-222222222222",
+      "properties": {
+        "Nome": { "type": "title", "title": [ { "plain_text": "Obra Teste" } ] },
+        "Foto Principal": { "type": "files", "files": [ { "file": { "url": "https://example.com/main.jpg" } } ] },
+        "Fotos Extras": { "type": "files", "files": [ { "file": { "url": "https://example.com/extra1.jpg" } }, { "file": { "url": "https://example.com/extra2.jpg" } } ] },
+        "Descrição": { "type": "rich_text", "rich_text": [ { "plain_text": "Descrição teste" } ] },
+        "Evento": { "type": "rich_text", "rich_text": [ { "plain_text": "Evento teste" } ] },
+        "Endereço": { "type": "rich_text", "rich_text": [ { "plain_text": "Endereço teste" } ] },
+        "Coordenadas": { "type": "rich_text", "rich_text": [ { "plain_text": "-3.73, -38.49" } ] },
+        "Data": { "type": "date", "date": { "start": "2026-09-07" } },
+        "Artistas": { "type": "relation", "relation": [ { "id": "4d195b29-4b07-41de-8029-6c0d9e607e4b" } ] }
+      }
+    }
+  ]
+}
+""".data(using: .utf8)!
+
+let artsWithTimeJSON = """
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "page",
+      "id": "33333333-3333-3333-3333-333333333333",
+      "properties": {
+        "Nome": { "type": "title", "title": [ { "plain_text": "Obra com horário" } ] },
+        "Data": { "type": "date", "date": { "start": "2026-09-07T12:00:00.000-03:00" } }
+      }
+    }
+  ]
+}
+""".data(using: .utf8)!
+
+let eventRangeJSON = """
+{
+  "id": "44444444-4444-4444-4444-444444444444",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Evento" } ] },
+    "Data": { "type": "date", "date": { "start": "2026-09-07", "end": "2026-09-10" } },
+    "Início": { "type": "date", "date": { "start": "2026-09-01" } },
+    "Convidados": { "type": "relation", "relation": [ { "id": "77777777-7777-7777-7777-777777777777" }, { "id": "not-a-uuid" } ] }
+  }
+}
+""".data(using: .utf8)!
+
+let eventSingleJSON = """
+{
+  "id": "55555555-5555-5555-5555-555555555555",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Evento único" } ] },
+    "Data": { "type": "date", "date": { "start": "2026-09-07" } }
+  }
+}
+""".data(using: .utf8)!
+
+let eventReversedJSON = """
+{
+  "id": "66666666-6666-6666-6666-666666666666",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Evento invertido" } ] },
+    "Data": { "type": "date", "date": { "start": "2026-09-10", "end": "2026-09-07" } }
+  }
+}
+""".data(using: .utf8)!
+
+let capturedArtistJSON = """
+{
+  "id": "88888888-8888-8888-8888-888888888888",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Artista capturado" } ] }
+  }
+}
+""".data(using: .utf8)!
+
+func check(_ condition: Bool, _ message: String) {
+    if condition {
+        print("PASS: \(message)")
+    } else {
+        print("FAIL: \(message)")
+        exit(1)
+    }
+}
+
+func utcDate(_ year: Int, _ month: Int, _ day: Int) -> Date {
+    var components = DateComponents()
+    components.year = year
+    components.month = month
+    components.day = day
+    var calendar = Calendar(identifier: .iso8601)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar.date(from: components)!
+}
+
+/// Serializes JSON with sorted keys so equality does not depend on key order.
+func normalizedJSON(_ value: Any) -> String {
+    let data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+}
+
+func encodedFilter(_ filter: NotionFilter) -> String {
+    normalizedJSON(try! JSONSerialization.jsonObject(with: JSONEncoder().encode(filter)))
+}
+
+do {
+    let artist = try JSONDecoder().decode(ListResponse<ArtistDTO>.self, from: artistsJSON).results[0]
+    check(artist.id == UUID(uuidString: "11111111-1111-1111-1111-111111111111")!, "artist id decoded as UUID")
+    check(artist.name == "Artista Teste", "artist title decoded")
+    check(artist.bio == "Bio teste", "artist rich text decoded")
+    check(artist.photoURL == URL(string: "https://example.com/artista.jpg"), "artist file URL decoded")
+
+    let art = try JSONDecoder().decode(ListResponse<ArtDTO>.self, from: artsJSON).results[0]
+    check(art.id == UUID(uuidString: "22222222-2222-2222-2222-222222222222")!, "art id decoded as UUID")
+    check(art.name == "Obra Teste", "art title decoded")
+    check(art.mainPhotoURL == URL(string: "https://example.com/main.jpg"), "art main photo decoded")
+    check(art.extraPhotoURLs == [URL(string: "https://example.com/extra1.jpg")!, URL(string: "https://example.com/extra2.jpg")!], "art extra photos decoded")
+    check(art.description == "Descrição teste", "art description decoded")
+    check(art.event == "Evento teste", "art event decoded")
+    check(art.address == "Endereço teste", "art address decoded")
+    check(art.coordinates == "-3.73, -38.49", "art coordinates decoded")
+    check(art.date == utcDate(2026, 9, 7), "art date-only decoded")
+    check(art.artistIDs == [UUID(uuidString: "4d195b29-4b07-41de-8029-6c0d9e607e4b")!], "art relations decoded as UUID")
+
+    let timedArt = try JSONDecoder().decode(ListResponse<ArtDTO>.self, from: artsWithTimeJSON).results[0]
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    check(timedArt.date == iso.date(from: "2026-09-07T12:00:00.000-03:00"), "art datetime decoded")
+    check(NotionDecoding.date(from: "") == nil, "empty date decodes to nil")
+
+    let event = try JSONDecoder().decode(EventDTO.self, from: eventRangeJSON)
+    check(event.period == (utcDate(2026, 9, 7) ..< utcDate(2026, 9, 10)), "date range decoded")
+    check(event.start == utcDate(2026, 9, 1), "explicit NotionDateStart still decodes")
+    check(event.guestIDs == [UUID(uuidString: "77777777-7777-7777-7777-777777777777")!], "relation ids decode as UUID and malformed ids are dropped")
+
+    let singleEvent = try JSONDecoder().decode(EventDTO.self, from: eventSingleJSON)
+    check(singleEvent.period == nil, "single date yields no range")
+
+    let reversedEvent = try JSONDecoder().decode(EventDTO.self, from: eventReversedJSON)
+    check(reversedEvent.period == nil, "end before start yields no range")
+
+    let missingID = try JSONDecoder().decode(EventDTO.self, from: Data("{\"properties\":{}}".utf8))
+    check(missingID.id == UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)), "missing id falls back to zero UUID")
+
+    check(ArtistDTO.notionProperties[\.name] == NotionField(name: "Nome", kind: .title), "artist title keypath maps to field")
+    check(ArtistDTO.notionProperties[\.bio] == NotionField(name: "Bio", kind: .richText), "artist rich text keypath maps to field")
+    check(ArtistDTO.notionProperties[\.photoURL] == NotionField(name: "Foto", kind: .file), "artist file keypath maps to field")
+    check(ArtistDTO.notionProperties.count == 3, "artist map has exactly the annotated properties")
+    check(ArtDTO.notionProperties[\.name] == NotionField(name: "Nome", kind: .title), "art title keypath maps to field")
+    check(ArtDTO.notionProperties[\.mainPhotoURL] == NotionField(name: "Foto Principal", kind: .file), "art file keypath maps to field")
+    check(ArtDTO.notionProperties[\.extraPhotoURLs] == NotionField(name: "Fotos Extras", kind: .files), "art files keypath maps to field")
+    check(ArtDTO.notionProperties[\.date] == NotionField(name: "Data", kind: .date), "art date keypath maps to field")
+    check(ArtDTO.notionProperties[\.artistIDs] == NotionField(name: "Artistas", kind: .relation), "art relation keypath maps to field")
+    check(ArtDTO.notionProperties.count == 9, "art map has exactly the annotated properties")
+    check(EventDTO.notionProperties[\.period] == NotionField(name: "Data", kind: .dateRange), "date range keypath maps to field")
+    check(EventDTO.notionProperties[\.guestIDs] == NotionField(name: "Convidados", kind: .relation), "event relation keypath maps to field")
+    check(ArtistDTO.notionField(for: \.name) == "Nome", "notionField resolves a registered keypath")
+    check(ArtistDTO.notionProperty(for: \.name)?.kind == .title, "notionProperty resolves kind")
+    check(ArtDTO.notionProperty(for: \.description)?.kind == .richText, "@NotionProperty String resolves to richText")
+    check(ArtistDTO.notionField(for: \.id) == nil, "generated id keypath is not in the map")
+
+    check(
+        encodedFilter(.relation("Artistas", .contains(UUID(uuidString: "4d195b29-4b07-41de-8029-6c0d9e607e4b")!))) ==
+        normalizedJSON(["property": "Artistas", "relation": ["contains": "4d195b29-4b07-41de-8029-6c0d9e607e4b"]]),
+        "relation filter encodes to Notion shape"
+    )
+    check(
+        encodedFilter(.and([.title("Nome", .equals("X")), .richText("Bio", .contains("Y"))])) ==
+        normalizedJSON(["and": [
+            ["property": "Nome", "title": ["equals": "X"]],
+            ["property": "Bio", "rich_text": ["contains": "Y"]]
+        ]]),
+        "compound filter encodes to Notion shape"
+    )
+    check(
+        encodedFilter(.date("Data", .isNotEmpty)) ==
+        normalizedJSON(["property": "Data", "date": ["is_not_empty": true]]),
+        "empty date condition encodes"
+    )
+
+    if #available(macOS 14.0, *) {
+        let titlePredicate = #Predicate<ArtDTO> { $0.name == "Obra Teste" }
+        let titleFilter = try notionFilter(titlePredicate)
+        check(titleFilter == .title("Nome", .equals("Obra Teste")), "predicate title equality converts")
+        check(
+            encodedFilter(titleFilter) == normalizedJSON(["property": "Nome", "title": ["equals": "Obra Teste"]]),
+            "predicate-derived filter encodes to Notion shape"
+        )
+
+        let artistID = UUID(uuidString: "4d195b29-4b07-41de-8029-6c0d9e607e4b")!
+        let relationPredicate = #Predicate<ArtDTO> { $0.artistIDs.contains(artistID) }
+        let relationFilter = try notionFilter(relationPredicate)
+        check(relationFilter == .relation("Artistas", .contains(artistID)), "predicate relation contains converts")
+        check(
+            encodedFilter(relationFilter) == normalizedJSON(["property": "Artistas", "relation": ["contains": "4d195b29-4b07-41de-8029-6c0d9e607e4b"]]),
+            "predicate-derived relation filter encodes to Notion shape"
+        )
+
+        let capturedArtist = try JSONDecoder().decode(CapturedArtistDTO.self, from: capturedArtistJSON)
+        let capturedPredicate = #Predicate<ArtDTO> { $0.artistIDs.contains(capturedArtist.id) }
+        let capturedFilter = try notionFilter(capturedPredicate)
+        check(
+            capturedFilter == .relation("Artistas", .contains(capturedArtist.id)),
+            "predicate resolves a captured DTO id key path to a literal"
+        )
+        check(
+            encodedFilter(capturedFilter) == normalizedJSON(["property": "Artistas", "relation": ["contains": "88888888-8888-8888-8888-888888888888"]]),
+            "captured-id predicate encodes to Notion shape"
+        )
+
+        do {
+            _ = try notionFilter(#Predicate<ArtDTO> { $0.description == "Descrição" })   // .richText, out of scope
+            check(false, "richText equality rejects in increment 2")
+        } catch NotionFilterConversionError.unsupportedField {
+            check(true, "non-title equality rejects as unsupportedField")
+        }
+
+        do {
+            let extraURL = URL(string: "https://example.com/extra1.jpg")!
+            _ = try notionFilter(#Predicate<ArtDTO> { $0.extraPhotoURLs.contains(extraURL) })   // files, not relation
+            check(false, "non-relation sequence contains rejects")
+        } catch NotionFilterConversionError.unsupportedRoot {
+            check(true, "non-relation sequence contains rejects as unsupportedRoot")
+        }
+    }
+
+    print("OK")
+} catch {
+    print("FAIL: \(error)")
+    exit(1)
+}
