@@ -23,7 +23,7 @@ protocol NotionFilterExpression {
     func notionFilter() throws -> NotionFilter
 }
 
-/// A node whose filter has a direct negated counterpart in Notion (title
+/// A node whose filter has a direct negated counterpart in Notion (text
 /// `does_not_equal`, relation `does_not_contain`). Notion has no generic NOT, so
 /// only leaves with such a counterpart can be negated.
 protocol NotionNegatableExpression {
@@ -91,10 +91,15 @@ where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
         let right = try rhs.operand()
         switch (left, right) {
         case (.field(let field), .string(let value)), (.string(let value), .field(let field)):
-            guard field.kind == .title else {
+            let condition: TextCondition = negated ? .doesNotEqual(value) : .equals(value)
+            switch field.kind {
+            case .title:
+                return .title(field.name, condition)
+            case .richText:
+                return .richText(field.name, condition)
+            default:
                 throw NotionFilterConversionError.unsupportedField(field.name)
             }
-            return .title(field.name, negated ? .doesNotEqual(value) : .equals(value))
         default:
             throw NotionFilterConversionError.unsupportedOperands("\(left) vs \(right)")
         }
@@ -134,9 +139,9 @@ where Wrapped: NotionNegatableExpression {
 }
 
 /// Converts a `Predicate` over a `NotionPage` type into a `NotionFilter` by
-/// tree-walking its expression. Supported root nodes are `Equal` (title
-/// equality), `SequenceContains` (relation `contains`) and `Negation` of either
-/// (title `does_not_equal`, relation `does_not_contain`); every other shape
+/// tree-walking its expression. Supported root nodes are `Equal` (title and rich
+/// text equality), `SequenceContains` (relation `contains`) and `Negation` of
+/// either (text `does_not_equal`, relation `does_not_contain`); every other shape
 /// throws `NotionFilterConversionError`.
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
@@ -144,4 +149,14 @@ public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws 
         throw NotionFilterConversionError.unsupportedRoot("\(predicate.expression)")
     }
     return try expression.notionFilter()
+}
+
+public extension NotionFilter {
+    /// Builds a filter from a `Predicate` over a `NotionPage` type. Factory form
+    /// of `notionFilter(_:)`, usable in leading-dot position:
+    /// `fetchArts(filter: .predicate(#Predicate<ArtDTO> { $0.artistIDs.contains(id) }))`.
+    @available(macOS 14.0, iOS 17.0, *)
+    static func predicate<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
+        try notionFilter(predicate)
+    }
 }

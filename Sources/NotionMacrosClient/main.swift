@@ -309,19 +309,49 @@ do {
             "negated predicate resolves a captured DTO id key path to a literal"
         )
 
-        do {
-            _ = try notionFilter(#Predicate<ArtDTO> { $0.description == "Descrição" })   // .richText, out of scope
-            check(false, "richText equality rejects in increment 2")
-        } catch NotionFilterConversionError.unsupportedField {
-            check(true, "non-title equality rejects as unsupportedField")
-        }
+        let factoryTitleFilter: NotionFilter = try .predicate(titlePredicate)
+        check(
+            factoryTitleFilter == titleFilter,
+            "NotionFilter.predicate factory agrees with notionFilter for title equality"
+        )
+        check(
+            encodedFilter(factoryTitleFilter) ==
+            normalizedJSON(["property": "Nome", "title": ["equals": "Obra Teste"]]),
+            "factory-derived title filter encodes to Notion shape"
+        )
+        let factoryRelationFilter: NotionFilter = try .predicate(relationPredicate)
+        check(
+            factoryRelationFilter == relationFilter,
+            "NotionFilter.predicate factory agrees with notionFilter for relation contains"
+        )
+        let factoryCapturedFilter: NotionFilter = try .predicate(capturedPredicate)
+        check(
+            encodedFilter(factoryCapturedFilter) ==
+            normalizedJSON(["property": "Artistas", "relation": ["contains": "88888888-8888-8888-8888-888888888888"]]),
+            "factory-derived captured-id filter encodes to Notion shape"
+        )
 
-        do {
-            _ = try notionFilter(#Predicate<ArtDTO> { !($0.description == "Descrição") })   // .richText, not negatable
-            check(false, "negated richText equality rejects")
-        } catch NotionFilterConversionError.unsupportedField {
-            check(true, "negated non-title equality rejects as unsupportedField")
-        }
+        let richTextPredicate = #Predicate<ArtDTO> { $0.description == "Descrição teste" }
+        let richTextFilter = try notionFilter(richTextPredicate)
+        check(
+            richTextFilter == .richText("Descrição", .equals("Descrição teste")),
+            "predicate rich text equality converts"
+        )
+        check(
+            encodedFilter(richTextFilter) == normalizedJSON(["property": "Descrição", "rich_text": ["equals": "Descrição teste"]]),
+            "predicate-derived rich text filter encodes to Notion shape"
+        )
+
+        let negatedRichTextPredicate = #Predicate<ArtDTO> { !($0.description == "Descrição teste") }
+        let negatedRichTextFilter = try notionFilter(negatedRichTextPredicate)
+        check(
+            negatedRichTextFilter == .richText("Descrição", .doesNotEqual("Descrição teste")),
+            "negated rich text equality converts to does_not_equal"
+        )
+        check(
+            encodedFilter(negatedRichTextFilter) == normalizedJSON(["property": "Descrição", "rich_text": ["does_not_equal": "Descrição teste"]]),
+            "negated rich text filter encodes to Notion shape"
+        )
 
         do {
             let extraURL = URL(string: "https://example.com/extra1.jpg")!
@@ -329,6 +359,14 @@ do {
             check(false, "non-relation sequence contains rejects")
         } catch NotionFilterConversionError.unsupportedRoot {
             check(true, "non-relation sequence contains rejects as unsupportedRoot")
+        }
+
+        do {
+            let extraURL = URL(string: "https://example.com/extra1.jpg")!
+            _ = try NotionFilter.predicate(#Predicate<ArtDTO> { $0.extraPhotoURLs.contains(extraURL) })
+            check(false, "factory propagates conversion errors")
+        } catch NotionFilterConversionError.unsupportedRoot {
+            check(true, "factory propagates conversion errors as unsupportedRoot")
         }
     }
 
