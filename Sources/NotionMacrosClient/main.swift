@@ -250,6 +250,16 @@ do {
         normalizedJSON(["property": "Data", "date": ["is_not_empty": true]]),
         "empty date condition encodes"
     )
+    check(
+        encodedFilter(.files("Blueprint", .isNotEmpty)) ==
+        normalizedJSON(["property": "Blueprint", "files": ["is_not_empty": true]]),
+        "files condition encodes"
+    )
+    check(
+        encodedFilter(.files("Blueprint", .isEmpty)) ==
+        normalizedJSON(["property": "Blueprint", "files": ["is_empty": true]]),
+        "empty files condition encodes"
+    )
 
     if #available(macOS 14.0, *) {
         let titlePredicate = #Predicate<ArtDTO> { $0.name == "Obra Teste" }
@@ -360,6 +370,28 @@ do {
         } catch NotionFilterConversionError.unsupportedRoot {
             check(true, "non-relation sequence contains rejects as unsupportedRoot")
         }
+
+        let emptyFilesPredicate = #Predicate<ArtDTO> { $0.extraPhotoURLs.isEmpty }
+        let emptyFilesFilter = try notionFilter(emptyFilesPredicate)
+        check(
+            emptyFilesFilter == .files("Fotos Extras", .isEmpty),
+            "predicate files isEmpty converts"
+        )
+        check(
+            encodedFilter(emptyFilesFilter) == normalizedJSON(["property": "Fotos Extras", "files": ["is_empty": true]]),
+            "predicate-derived files isEmpty filter encodes"
+        )
+
+        let nonEmptyFilesPredicate = #Predicate<ArtDTO> { !$0.extraPhotoURLs.isEmpty }
+        let nonEmptyFilesFilter = try notionFilter(nonEmptyFilesPredicate)
+        check(
+            nonEmptyFilesFilter == .files("Fotos Extras", .isNotEmpty),
+            "negated files isEmpty converts to is_not_empty"
+        )
+        check(
+            encodedFilter(nonEmptyFilesFilter) == normalizedJSON(["property": "Fotos Extras", "files": ["is_not_empty": true]]),
+            "negated predicate-derived files filter encodes"
+        )
 
         do {
             let extraURL = URL(string: "https://example.com/extra1.jpg")!

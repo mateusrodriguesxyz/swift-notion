@@ -49,10 +49,12 @@ public struct NotionClient {
         request.setValue("2026-03-11", forHTTPHeaderField: "Notion-Version")
 
         if let filter {
-            request.httpBody = try JSONEncoder().encode(QueryBody(filter: filter))
-//            if let httpBodyJSON = String(data: request.httpBody!, encoding: .utf8) {
-//                print(httpBodyJSON)
-//            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            request.httpBody = try encoder.encode(QueryBody(filter: filter))
+            if let httpBodyJSON = String(data: request.httpBody!, encoding: .utf8) {
+                print(httpBodyJSON)
+            }
         }
 
         let (data, _) = try await URLSession.shared.data(for: request)

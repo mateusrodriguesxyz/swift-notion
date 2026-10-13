@@ -130,6 +130,29 @@ where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
     }
 }
 
+/// `$0.files.isEmpty` -> `files` `is_empty` (or `is_not_empty` when negated).
+/// The `isEmpty` key path is resolved against the concrete `[URL]` files shape,
+/// not `Collection` (a `Collection`-constrained comparison fails at runtime).
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.KeyPath: NotionFilterExpression, NotionNegatableExpression
+where Root: NotionFilterOperandExpression, Root.Output == [URL], Output == Bool {
+    func notionFilter() throws -> NotionFilter { try filter(negated: false) }
+    func negatedFilter() throws -> NotionFilter { try filter(negated: true) }
+
+    private func filter(negated: Bool) throws -> NotionFilter {
+        guard case .field(let field) = try root.operand() else {
+            throw NotionFilterConversionError.unsupportedOperands("\(keyPath)")
+        }
+        guard field.kind == .files else {
+            throw NotionFilterConversionError.unsupportedField(field.name)
+        }
+        guard keyPath == \.isEmpty else {
+            throw NotionFilterConversionError.unsupportedField("\(keyPath)")
+        }
+        return .files(field.name, negated ? .isNotEmpty : .isEmpty)
+    }
+}
+
 /// `!<leaf>` -> the leaf's negated counterpart. Only leaves that are
 /// `NotionNegatableExpression` convert; anything else fails the root cast.
 @available(macOS 14.0, iOS 17.0, *)
@@ -140,9 +163,10 @@ where Wrapped: NotionNegatableExpression {
 
 /// Converts a `Predicate` over a `NotionPage` type into a `NotionFilter` by
 /// tree-walking its expression. Supported root nodes are `Equal` (title and rich
-/// text equality), `SequenceContains` (relation `contains`) and `Negation` of
-/// either (text `does_not_equal`, relation `does_not_contain`); every other shape
-/// throws `NotionFilterConversionError`.
+/// text equality), `SequenceContains` (relation `contains`), `KeyPath`
+/// (`$0.files.isEmpty` -> files `is_empty`) and `Negation` of any negatable leaf
+/// (text `does_not_equal`, relation `does_not_contain`, files `is_not_empty`);
+/// every other shape throws `NotionFilterConversionError`.
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
     guard let expression = predicate.expression as? any NotionFilterExpression else {

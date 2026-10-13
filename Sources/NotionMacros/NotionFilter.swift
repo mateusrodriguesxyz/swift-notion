@@ -17,6 +17,7 @@ public enum NotionFilter: Encodable, Sendable, Equatable {
     case multiSelect(String, contains: String)
     case checkbox(String, equals: Bool)
     case number(String, NumberCondition)
+    case files(String, FilesCondition)
     case and([NotionFilter])
     case or([NotionFilter])
 
@@ -47,6 +48,9 @@ public enum NotionFilter: Encodable, Sendable, Equatable {
         case .number(let property, let condition):
             try container.encode(property, forKey: .property)
             try container.encode(condition, forKey: .number)
+        case .files(let property, let condition):
+            try container.encode(property, forKey: .property)
+            try container.encode(condition, forKey: .files)
         case .and(let filters):
             var list = container.nestedUnkeyedContainer(forKey: .and)
             for filter in filters { try list.encode(filter) }
@@ -157,6 +161,21 @@ public enum NumberCondition: Encodable, Sendable, Equatable {
     }
 }
 
+/// Conditions for `files` properties. Notion supports only empty/not-empty
+/// checks; a single-file and a multi-file property both filter through `files`.
+public enum FilesCondition: Encodable, Sendable, Equatable {
+    case isEmpty
+    case isNotEmpty
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: ConditionKey.self)
+        switch self {
+        case .isEmpty: try container.encode(true, forKey: .isEmpty)
+        case .isNotEmpty: try container.encode(true, forKey: .isNotEmpty)
+        }
+    }
+}
+
 /// The property-kind keys of a Notion filter object.
 enum FilterKey: String, CodingKey {
     case property
@@ -166,6 +185,7 @@ enum FilterKey: String, CodingKey {
     case select
     case checkbox
     case number
+    case files
     case and
     case or
     case richText = "rich_text"
