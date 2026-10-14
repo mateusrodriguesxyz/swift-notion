@@ -149,7 +149,7 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
         if attribute == "NotionProperty" {
             guard let resolved = resolvedAttribute(for: scanned.type) else {
                 throw NotionPropertyTypeError(description:
-                    "`@NotionProperty` on '\(scanned.identifier)' has unsupported type '\(scanned.type?.trimmedDescription ?? "<none>")'. Supported: String, URL?, [URL], Date?, Range<Date>?. Use `@NotionTitle` for the title property and `@NotionRelationIDs` for relations.")
+                    "`@NotionProperty` on '\(scanned.identifier)' has unsupported type '\(scanned.type?.trimmedDescription ?? "<none>")'. Supported: String, URL?, [URL], Date?, Range<Date>?, Bool, Double?. Use `@NotionTitle` for the title property and `@NotionRelationIDs` for relations.")
             }
             attribute = resolved
         } else if attribute == "NotionDateStart" {
@@ -162,6 +162,16 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
                 throw NotionPropertyTypeError(description:
                     "`@NotionRelationIDs` on '\(scanned.identifier)' requires a `[UUID]` property, got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
             }
+        } else if attribute == "NotionCheckbox" {
+            guard isBool(scanned.type) else {
+                throw NotionPropertyTypeError(description:
+                    "`@NotionCheckbox` on '\(scanned.identifier)' requires a `Bool` property, got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
+            }
+        } else if attribute == "NotionNumber" {
+            guard isOptionalDouble(scanned.type) else {
+                throw NotionPropertyTypeError(description:
+                    "`@NotionNumber` on '\(scanned.identifier)' requires an optional `Double?` property, got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
+            }
         }
         properties.append(NotionPropertyInfo(identifier: scanned.identifier, attribute: attribute, key: scanned.key))
     }
@@ -173,6 +183,17 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
 private func isOptionalDate(_ type: TypeSyntax?) -> Bool {
     guard let optional = type?.as(OptionalTypeSyntax.self) else { return false }
     return optional.wrappedType.as(IdentifierTypeSyntax.self)?.name.text == "Date"
+}
+
+/// `true` when the declared type is a non-optional `Bool`.
+private func isBool(_ type: TypeSyntax?) -> Bool {
+    type?.as(IdentifierTypeSyntax.self)?.name.text == "Bool"
+}
+
+/// `true` when the declared type is an optional `Double?`.
+private func isOptionalDouble(_ type: TypeSyntax?) -> Bool {
+    guard let optional = type?.as(OptionalTypeSyntax.self) else { return false }
+    return optional.wrappedType.as(IdentifierTypeSyntax.self)?.name.text == "Double"
 }
 
 /// The element identifier of an array type, unwrapping one level of optional
@@ -199,6 +220,10 @@ private func resolvedAttribute(for type: TypeSyntax?) -> String? {
             return isOptional ? "NotionFile" : nil
         case "Date":
             return isOptional ? "NotionDateStart" : nil
+        case "Bool":
+            return isOptional ? nil : "NotionCheckbox"
+        case "Double":
+            return isOptional ? "NotionNumber" : nil
         case "Range":
             guard isOptional,
                   let argument = identifier.genericArgumentClause?.arguments.first,
@@ -228,6 +253,8 @@ private func notionKind(for attribute: String) -> String {
     case "NotionDateStart": return "date"
     case "NotionDateRange": return "dateRange"
     case "NotionRelationIDs": return "relation"
+    case "NotionCheckbox": return "checkbox"
+    case "NotionNumber": return "number"
     default: return "richText"
     }
 }
@@ -250,6 +277,10 @@ private func decodeLine(for attribute: String, identifier: String) -> String? {
         return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date.flatMap(NotionMacros.NotionDecoding.range(from:))"
     case "NotionRelationIDs":
         return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+    case "NotionCheckbox":
+        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Checkbox.self, forKey: .\(identifier)))?.checkbox ?? false"
+    case "NotionNumber":
+        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.NumberValue.self, forKey: .\(identifier)))?.number"
     default:
         return nil
     }

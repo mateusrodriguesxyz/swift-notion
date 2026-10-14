@@ -12,6 +12,8 @@ struct NotionMacrosPlugin: CompilerPlugin {
         NotionDateStartMacro.self,
         NotionDateRangeMacro.self,
         NotionRelationIDsMacro.self,
+        NotionCheckboxMacro.self,
+        NotionNumberMacro.self,
         NotionPropertyMacro.self,
     ]
 }

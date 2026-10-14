@@ -12,6 +12,8 @@ public struct NotionField: Sendable, Equatable {
         case date
         case dateRange
         case relation
+        case checkbox
+        case number
     }
 
     public init(name: String, kind: Kind) {

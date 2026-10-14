@@ -46,6 +46,15 @@ extension CapturedArtistDTO: Encodable {
     }
 }
 
+@NotionPage
+struct FeedbackDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionCheckbox("Publicado") var published: Bool
+    @NotionNumber("Nota") var score: Double?
+    @NotionProperty("Peso") var weight: Double?
+    @NotionProperty("Ativo") var active: Bool
+}
+
 struct ListResponse<T: Decodable>: Decodable {
     let results: [T]
 }
@@ -143,6 +152,30 @@ let capturedArtistJSON = """
   "id": "88888888-8888-8888-8888-888888888888",
   "properties": {
     "Nome": { "type": "title", "title": [ { "plain_text": "Artista capturado" } ] }
+  }
+}
+""".data(using: .utf8)!
+
+let feedbackJSON = """
+{
+  "id": "99999999-9999-9999-9999-999999999999",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Feedback" } ] },
+    "Publicado": { "type": "checkbox", "checkbox": true },
+    "Nota": { "type": "number", "number": 8 },
+    "Peso": { "type": "number", "number": 1.5 },
+    "Ativo": { "type": "checkbox", "checkbox": true }
+  }
+}
+""".data(using: .utf8)!
+
+let feedbackEmptyNumberJSON = """
+{
+  "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Feedback vazio" } ] },
+    "Nota": { "type": "number", "number": null },
+    "Ativo": { "type": "checkbox", "checkbox": false }
   }
 }
 """.data(using: .utf8)!
@@ -437,6 +470,21 @@ do {
             check(true, "factory propagates conversion errors as unsupportedRoot")
         }
     }
+
+    let feedback = try JSONDecoder().decode(FeedbackDTO.self, from: feedbackJSON)
+    check(feedback.published == true, "checkbox decodes to Bool")
+    check(feedback.score == 8, "number decodes to Double?")
+    check(feedback.weight == 1.5, "@NotionProperty Double? infers number")
+    check(feedback.active == true, "@NotionProperty Bool infers checkbox")
+    check(FeedbackDTO.notionProperties[\.published] == NotionField(name: "Publicado", kind: .checkbox), "checkbox keypath maps to field")
+    check(FeedbackDTO.notionProperties[\.score] == NotionField(name: "Nota", kind: .number), "number keypath maps to field")
+    check(FeedbackDTO.notionProperties[\.weight] == NotionField(name: "Peso", kind: .number), "inferred number keypath maps to field")
+    check(FeedbackDTO.notionProperties[\.active] == NotionField(name: "Ativo", kind: .checkbox), "inferred checkbox keypath maps to field")
+
+    let emptyFeedback = try JSONDecoder().decode(FeedbackDTO.self, from: feedbackEmptyNumberJSON)
+    check(emptyFeedback.published == false, "missing checkbox falls back to false")
+    check(emptyFeedback.score == nil, "null number decodes to nil")
+    check(emptyFeedback.active == false, "explicit false checkbox decodes")
 
     print("OK")
 } catch {

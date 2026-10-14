@@ -107,12 +107,20 @@ public macro NotionDateRange(_ key: String) = #externalMacro(module: "NotionMacr
 @attached(peer, names: arbitrary)
 public macro NotionRelationIDs(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionRelationIDsMacro")
 
+@attached(peer, names: arbitrary)
+public macro NotionCheckbox(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionCheckboxMacro")
+
+@attached(peer, names: arbitrary)
+public macro NotionNumber(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionNumberMacro")
+
 /// Infer the decoder from the property's declared Swift type. Supported types:
 /// `String`/`String?` (Rich Text)
 /// `URL?` (First File URL)
 /// `[URL]` (All Files URLs)
 /// `Date?` (Start Date)
 /// `Range<Date>?` (Start and End Date)
+/// `Bool` (Checkbox)
+/// `Double?` (Number)
 ///  The title and relation properties are not inferred; use `@NotionTitle` and `@NotionRelationIDs` for those.
 @attached(peer, names: arbitrary)
 public macro NotionProperty(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionPropertyMacro")

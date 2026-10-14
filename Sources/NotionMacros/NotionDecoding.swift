@@ -93,4 +93,12 @@ public extension NotionDecoding {
     struct Relation: Decodable {
         public let relation: [RelationValue]
     }
+
+    struct Checkbox: Decodable {
+        public let checkbox: Bool
+    }
+
+    struct NumberValue: Decodable {
+        public let number: Double?
+    }
 }
