@@ -50,11 +50,28 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         }
         """
 
+        let encodeLines = properties
+            .map { encodeLine(for: $0) }
+            .joined(separator: "\n    ")
+
+        // Emitted as a member, not through the extension expansion, so it is
+        // covered by `names: arbitrary`. The extension expansion declares the
+        // `Encodable` conformance that this member satisfies.
+        let encoder = """
+        \(access)func encode(to encoder: any Encoder) throws {
+            var root = encoder.container(keyedBy: CodingKeys.self)
+            try root.encode(id, forKey: .id)
+            var properties = root.nestedContainer(keyedBy: PropertyKeys.self, forKey: .properties)
+            \(encodeLines)
+        }
+        """
+
         return [
             DeclSyntax(stringLiteral: codingKeys),
             DeclSyntax(stringLiteral: propertyKeys),
             DeclSyntax(stringLiteral: idProperty),
             DeclSyntax(stringLiteral: initializer),
+            DeclSyntax(stringLiteral: encoder),
         ]
     }
 
@@ -84,7 +101,7 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         ].joined(separator: "\n")
 
         let extensionSource = """
-        extension \(typeName): NotionMacros.NotionPage {
+        extension \(typeName): NotionMacros.NotionPage, Encodable {
         \(property)
         }
         """
@@ -173,7 +190,12 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
                     "`@NotionNumber` on '\(scanned.identifier)' requires an optional `Double?` property, got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
             }
         }
-        properties.append(NotionPropertyInfo(identifier: scanned.identifier, attribute: attribute, key: scanned.key))
+        properties.append(NotionPropertyInfo(
+            identifier: scanned.identifier,
+            attribute: attribute,
+            key: scanned.key,
+            isOptional: scanned.type?.is(OptionalTypeSyntax.self) ?? false
+        ))
     }
     return properties
 }
@@ -284,6 +306,15 @@ private func decodeLine(for attribute: String, identifier: String) -> String? {
     default:
         return nil
     }
+}
+
+/// Builds the `try properties.<function>(...)` line that encodes one Notion
+/// property as its Swift value. `@NotionPage` synthesizes a minimal `Encodable`
+/// conformance: property values (including `URL`/`[URL]`) encode through their
+/// own `Codable` conformances, not Notion write shapes.
+private func encodeLine(for property: NotionPropertyInfo) -> String {
+    let function = property.isOptional ? "encodeIfPresent" : "encode"
+    return "try properties.\(function)(self.\(property.identifier), forKey: .\(property.identifier))"
 }
 
 func extractKey(from node: AttributeSyntax) -> String? {

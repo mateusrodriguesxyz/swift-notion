@@ -11,4 +11,7 @@ struct NotionPropertyInfo {
     let identifier: String
     let attribute: String
     let key: String
+    /// `true` when the declared property type is optional, so the generated
+    /// encoder picks `encodeIfPresent` instead of `encode`.
+    let isOptional: Bool
 }

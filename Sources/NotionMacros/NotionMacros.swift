@@ -83,7 +83,7 @@ public struct NotionClient {
 }
 
 @attached(member, names: arbitrary)
-@attached(extension, conformances: NotionPage, names: named(notionProperties))
+@attached(extension, conformances: NotionPage, Encodable, names: named(notionProperties))
 public macro NotionPage() = #externalMacro(module: "NotionMacrosImplementation", type: "NotionPageMacro")
 
 @attached(peer, names: arbitrary)

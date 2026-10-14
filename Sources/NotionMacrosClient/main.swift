@@ -29,21 +29,12 @@ struct EventDTO: Decodable {
     @NotionRelationIDs("Convidados") var guestIDs: [UUID]
 }
 
-/// A `@NotionPage` type made `Encodable` by hand: the macro-generated `CodingKeys`
-/// carries a `properties` case with no stored property, so auto-synthesis is
-/// unavailable. `Encodable` is what lets a captured `capturedArtist.id` build a
+/// A `@NotionPage` type used to prove a captured DTO id key path resolves in a
 /// `#Predicate` (`Value<Output>` is a `StandardPredicateExpression` only when
-/// `Output` is `Codable`).
+/// `Output` is `Codable`; `@NotionPage` synthesizes `Encodable`).
 @NotionPage
 struct CapturedArtistDTO: Decodable {
     @NotionTitle("Nome") var name: String
-}
-
-extension CapturedArtistDTO: Encodable {
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-    }
 }
 
 @NotionPage
@@ -265,6 +256,48 @@ do {
     check(ArtDTO.notionProperty(for: \.description)?.kind == .richText, "@NotionProperty String resolves to richText")
     check(ArtistDTO.notionField(for: \.id) == nil, "generated id keypath is not in the map")
 
+    let encodedArtist = normalizedJSON(try JSONSerialization.jsonObject(with: JSONEncoder().encode(artist)))
+    check(
+        encodedArtist == normalizedJSON([
+            "id": "11111111-1111-1111-1111-111111111111",
+            "properties": [
+                "Nome": "Artista Teste",
+                "Bio": "Bio teste",
+                "Foto": "https://example.com/artista.jpg",
+            ],
+        ]),
+        "artist encodes id and raw Swift property values"
+    )
+
+    let artEncoder = JSONEncoder()
+    artEncoder.dateEncodingStrategy = .iso8601
+    let encodedArt = try JSONSerialization.jsonObject(with: artEncoder.encode(art)) as! [String: Any]
+    let encodedArtProperties = encodedArt["properties"] as! [String: Any]
+    check(encodedArt["id"] as? String == "22222222-2222-2222-2222-222222222222", "art encodes id")
+    check(encodedArtProperties["Nome"] as? String == "Obra Teste", "art title encodes as its Swift value")
+    check(encodedArtProperties["Foto Principal"] as? String == "https://example.com/main.jpg", "art single file URL encodes as-is")
+    check(
+        encodedArtProperties["Fotos Extras"] as? [String] == ["https://example.com/extra1.jpg", "https://example.com/extra2.jpg"],
+        "art file URLs encode as-is"
+    )
+    check(encodedArtProperties["Data"] as? String == "2026-09-07T00:00:00Z", "art date encodes through the caller's strategy")
+    check(
+        encodedArtProperties["Artistas"] as? [String] == ["4D195B29-4B07-41DE-8029-6C0D9E607E4B"],
+        "art relation ids encode as UUID strings"
+    )
+
+    let encodedEvent = try JSONSerialization.jsonObject(with: artEncoder.encode(event)) as! [String: Any]
+    let encodedEventProperties = encodedEvent["properties"] as! [String: Any]
+    check(
+        encodedEventProperties["Data"] as? [String] == ["2026-09-07T00:00:00Z", "2026-09-10T00:00:00Z"],
+        "date range encodes as its Swift bounds"
+    )
+    check(encodedEventProperties["Início"] as? String == "2026-09-01T00:00:00Z", "date start encodes through the caller's strategy")
+    check(
+        encodedEventProperties["Convidados"] as? [String] == ["77777777-7777-7777-7777-777777777777"],
+        "event relation ids encode as UUID strings"
+    )
+
     check(
         encodedFilter(.relation("Artistas", .contains(UUID(uuidString: "4d195b29-4b07-41de-8029-6c0d9e607e4b")!))) ==
         normalizedJSON(["property": "Artistas", "relation": ["contains": "4d195b29-4b07-41de-8029-6c0d9e607e4b"]]),
@@ -485,6 +518,27 @@ do {
     check(emptyFeedback.published == false, "missing checkbox falls back to false")
     check(emptyFeedback.score == nil, "null number decodes to nil")
     check(emptyFeedback.active == false, "explicit false checkbox decodes")
+
+    let encodedFeedback = normalizedJSON(try JSONSerialization.jsonObject(with: JSONEncoder().encode(feedback)))
+    check(
+        encodedFeedback == normalizedJSON([
+            "id": "99999999-9999-9999-9999-999999999999",
+            "properties": [
+                "Nome": "Feedback",
+                "Publicado": true,
+                "Nota": 8,
+                "Peso": 1.5,
+                "Ativo": true,
+            ],
+        ]),
+        "feedback encodes checkbox and number values"
+    )
+
+    let encodedEmptyFeedback = try JSONSerialization.jsonObject(with: JSONEncoder().encode(emptyFeedback)) as! [String: Any]
+    let encodedEmptyFeedbackProperties = encodedEmptyFeedback["properties"] as! [String: Any]
+    check(encodedEmptyFeedbackProperties["Nota"] == nil, "nil number property is omitted")
+    check(encodedEmptyFeedbackProperties["Peso"] == nil, "nil inferred number property is omitted")
+    check(encodedEmptyFeedbackProperties["Ativo"] as? Bool == false, "explicit false checkbox still encodes")
 
     print("OK")
 } catch {
