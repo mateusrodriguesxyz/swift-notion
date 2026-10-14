@@ -41,6 +41,7 @@ enum FilterOperand {
     case field(NotionField)
     case string(String)
     case uuid(UUID)
+    case null
 }
 
 /// A literal type that can sit on one side of a comparison (`PredicateExpressions.Value`).
@@ -63,6 +64,13 @@ extension PredicateExpressions.Value: NotionFilterOperandExpression where Output
     func operand() throws -> FilterOperand { value.filterOperand() }
 }
 
+/// `nil` on one side of a comparison (`$0.photoURL == nil`). Resolves to
+/// `FilterOperand.null`; only the `.file` kind maps it to a `files` filter.
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.NilLiteral: NotionFilterOperandExpression {
+    func operand() throws -> FilterOperand { .null }
+}
+
 @available(macOS 14.0, iOS 17.0, *)
 extension PredicateExpressions.KeyPath: NotionFilterOperandExpression where Root.Output: NotionPage {
     func operand() throws -> FilterOperand {
@@ -80,30 +88,55 @@ extension PredicateExpressions.KeyPath: NotionFilterOperandExpression where Root
     }
 }
 
+/// Resolves the two sides of an `Equal`/`NotEqual` comparison into a filter.
+/// Shared by both nodes so `a != b` is exactly the negation of `a == b`.
+@available(macOS 14.0, iOS 17.0, *)
+private func notionComparisonFilter<L: NotionFilterOperandExpression, R: NotionFilterOperandExpression>(
+    _ lhs: L,
+    _ rhs: R,
+    negated: Bool
+) throws -> NotionFilter {
+    let left = try lhs.operand()
+    let right = try rhs.operand()
+    switch (left, right) {
+    case (.field(let field), .string(let value)), (.string(let value), .field(let field)):
+        let condition: TextCondition = negated ? .doesNotEqual(value) : .equals(value)
+        switch field.kind {
+        case .title:
+            return .title(field.name, condition)
+        case .richText:
+            return .richText(field.name, condition)
+        default:
+            throw NotionFilterConversionError.unsupportedField(field.name)
+        }
+    case (.field(let field), .null), (.null, .field(let field)):
+        guard field.kind == .file else {
+            throw NotionFilterConversionError.unsupportedField(field.name)
+        }
+        return .files(field.name, negated ? .isNotEmpty : .isEmpty)
+    default:
+        throw NotionFilterConversionError.unsupportedOperands("\(left) vs \(right)")
+    }
+}
+
+/// `$0.field == value` -> the field's equality condition, or its negated
+/// counterpart (`!($0.field == value)`). `== nil` on a `.file` field maps to
+/// files `is_empty`.
 @available(macOS 14.0, iOS 17.0, *)
 extension PredicateExpressions.Equal: NotionFilterExpression, NotionNegatableExpression
 where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
-    func notionFilter() throws -> NotionFilter { try filter(negated: false) }
-    func negatedFilter() throws -> NotionFilter { try filter(negated: true) }
+    func notionFilter() throws -> NotionFilter { try notionComparisonFilter(lhs, rhs, negated: false) }
+    func negatedFilter() throws -> NotionFilter { try notionComparisonFilter(lhs, rhs, negated: true) }
+}
 
-    private func filter(negated: Bool) throws -> NotionFilter {
-        let left = try lhs.operand()
-        let right = try rhs.operand()
-        switch (left, right) {
-        case (.field(let field), .string(let value)), (.string(let value), .field(let field)):
-            let condition: TextCondition = negated ? .doesNotEqual(value) : .equals(value)
-            switch field.kind {
-            case .title:
-                return .title(field.name, condition)
-            case .richText:
-                return .richText(field.name, condition)
-            default:
-                throw NotionFilterConversionError.unsupportedField(field.name)
-            }
-        default:
-            throw NotionFilterConversionError.unsupportedOperands("\(left) vs \(right)")
-        }
-    }
+/// `$0.field != value` -> the negation of the equivalent `Equal`. `!= nil` on a
+/// `.file` field maps to files `is_not_empty`. (`!=` is a distinct node, not a
+/// `Negation` of `Equal`.)
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.NotEqual: NotionFilterExpression, NotionNegatableExpression
+where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
+    func notionFilter() throws -> NotionFilter { try notionComparisonFilter(lhs, rhs, negated: true) }
+    func negatedFilter() throws -> NotionFilter { try notionComparisonFilter(lhs, rhs, negated: false) }
 }
 
 /// `$0.relationIDs.contains(id)` -> a `relation` `contains` filter (or
@@ -162,11 +195,12 @@ where Wrapped: NotionNegatableExpression {
 }
 
 /// Converts a `Predicate` over a `NotionPage` type into a `NotionFilter` by
-/// tree-walking its expression. Supported root nodes are `Equal` (title and rich
-/// text equality), `SequenceContains` (relation `contains`), `KeyPath`
-/// (`$0.files.isEmpty` -> files `is_empty`) and `Negation` of any negatable leaf
-/// (text `does_not_equal`, relation `does_not_contain`, files `is_not_empty`);
-/// every other shape throws `NotionFilterConversionError`.
+/// tree-walking its expression. Supported root nodes are `Equal`/`NotEqual`
+/// (title and rich text equality, and `== nil`/`!= nil` on files), `SequenceContains`
+/// (relation `contains`), `KeyPath` (`$0.files.isEmpty` -> files `is_empty`) and
+/// `Negation` of any negatable leaf (text `does_not_equal`, relation
+/// `does_not_contain`, files `is_not_empty`); every other shape throws
+/// `NotionFilterConversionError`.
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
     guard let expression = predicate.expression as? any NotionFilterExpression else {

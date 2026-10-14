@@ -393,6 +393,42 @@ do {
             "negated predicate-derived files filter encodes"
         )
 
+        let nilFilePredicate = #Predicate<ArtDTO> { $0.mainPhotoURL == nil }
+        let nilFileFilter = try notionFilter(nilFilePredicate)
+        check(
+            nilFileFilter == .files("Foto Principal", .isEmpty),
+            "file == nil converts to files is_empty"
+        )
+        check(
+            encodedFilter(nilFileFilter) == normalizedJSON(["property": "Foto Principal", "files": ["is_empty": true]]),
+            "predicate-derived file == nil filter encodes"
+        )
+
+        let nonNilFilePredicate = #Predicate<ArtDTO> { $0.mainPhotoURL != nil }
+        let nonNilFileFilter = try notionFilter(nonNilFilePredicate)
+        check(
+            nonNilFileFilter == .files("Foto Principal", .isNotEmpty),
+            "file != nil converts to files is_not_empty"
+        )
+        check(
+            encodedFilter(nonNilFileFilter) == normalizedJSON(["property": "Foto Principal", "files": ["is_not_empty": true]]),
+            "predicate-derived file != nil filter encodes"
+        )
+
+        let negatedNilFilePredicate = #Predicate<ArtDTO> { !($0.mainPhotoURL == nil) }
+        check(
+            try notionFilter(negatedNilFilePredicate) == .files("Foto Principal", .isNotEmpty),
+            "negated file == nil converts to is_not_empty"
+        )
+
+        do {
+            let someURL = URL(string: "https://example.com/main.jpg")!
+            _ = try notionFilter(#Predicate<ArtDTO> { $0.mainPhotoURL == someURL })
+            check(false, "file URL equality rejects")
+        } catch NotionFilterConversionError.unsupportedRoot {
+            check(true, "file URL equality rejects as unsupportedRoot")
+        }
+
         do {
             let extraURL = URL(string: "https://example.com/extra1.jpg")!
             _ = try NotionFilter.predicate(#Predicate<ArtDTO> { $0.extraPhotoURLs.contains(extraURL) })
