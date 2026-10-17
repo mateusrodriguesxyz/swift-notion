@@ -57,10 +57,13 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         // Emitted as a member, not through the extension expansion, so it is
         // covered by `names: arbitrary`. The extension expansion declares the
         // `Encodable` conformance that this member satisfies.
+        //
+        // The output is the write shape of a Create/Update page request body:
+        // `{ "properties": { <Notion field name>: <Notion property object> } }`.
+        // `id` is deliberately not encoded; it is read-only on the write side.
         let encoder = """
         \(access)func encode(to encoder: any Encoder) throws {
             var root = encoder.container(keyedBy: CodingKeys.self)
-            try root.encode(id, forKey: .id)
             var properties = root.nestedContainer(keyedBy: PropertyKeys.self, forKey: .properties)
             \(encodeLines)
         }
@@ -309,12 +312,44 @@ private func decodeLine(for attribute: String, identifier: String) -> String? {
 }
 
 /// Builds the `try properties.<function>(...)` line that encodes one Notion
-/// property as its Swift value. `@NotionPage` synthesizes a minimal `Encodable`
-/// conformance: property values (including `URL`/`[URL]`) encode through their
-/// own `Codable` conformances, not Notion write shapes.
+/// property. `@NotionPage` synthesizes an `Encodable` whose output is the
+/// Notion write shape of a Create/Update page request: each declared value is
+/// wrapped in the matching `NotionEncoding` box (title/rich_text/files/date/
+/// relation/checkbox/number). Optional properties use `encodeIfPresent`, so
+/// `nil` omits the key and leaves the field untouched on update.
 private func encodeLine(for property: NotionPropertyInfo) -> String {
     let function = property.isOptional ? "encodeIfPresent" : "encode"
-    return "try properties.\(function)(self.\(property.identifier), forKey: .\(property.identifier))"
+    return "try properties.\(function)(\(encodedValueExpression(for: property)), forKey: .\(property.identifier))"
+}
+
+/// The value expression passed to `encode`/`encodeIfPresent`: the declared
+/// property wrapped in the `NotionEncoding` box for its attribute. Optional
+/// kinds map to their box (`Optional<Box>`), preserving optionality for
+/// `encodeIfPresent`.
+private func encodedValueExpression(for property: NotionPropertyInfo) -> String {
+    let id = "self.\(property.identifier)"
+    switch property.attribute {
+    case "NotionTitle":
+        return "NotionMacros.NotionEncoding.Title(content: \(id))"
+    case "NotionRichText":
+        return "NotionMacros.NotionEncoding.RichText(content: \(id))"
+    case "NotionFile":
+        return "\(id).map { NotionMacros.NotionEncoding.File(url: $0) }"
+    case "NotionFiles":
+        return "NotionMacros.NotionEncoding.Files(urls: \(id))"
+    case "NotionDateStart":
+        return "\(id).map { NotionMacros.NotionEncoding.DateValue(start: $0) }"
+    case "NotionDateRange":
+        return "\(id).map { NotionMacros.NotionEncoding.DateValue(start: $0.lowerBound, end: $0.upperBound) }"
+    case "NotionRelationIDs":
+        return "NotionMacros.NotionEncoding.Relation(ids: \(id))"
+    case "NotionCheckbox":
+        return "NotionMacros.NotionEncoding.Checkbox(value: \(id))"
+    case "NotionNumber":
+        return "\(id).map { NotionMacros.NotionEncoding.Number(value: $0) }"
+    default:
+        return id
+    }
 }
 
 func extractKey(from node: AttributeSyntax) -> String? {

@@ -46,6 +46,13 @@ struct FeedbackDTO: Decodable {
     @NotionProperty("Ativo") var active: Bool
 }
 
+/// Used to prove an empty string encodes as an empty array (Notion's clear).
+@NotionPage
+struct BlankDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionRichText("Bio") var bio: String
+}
+
 struct ListResponse<T: Decodable>: Decodable {
     let results: [T]
 }
@@ -259,43 +266,62 @@ do {
     let encodedArtist = normalizedJSON(try JSONSerialization.jsonObject(with: JSONEncoder().encode(artist)))
     check(
         encodedArtist == normalizedJSON([
-            "id": "11111111-1111-1111-1111-111111111111",
             "properties": [
-                "Nome": "Artista Teste",
-                "Bio": "Bio teste",
-                "Foto": "https://example.com/artista.jpg",
-            ],
+                "Nome": ["title": [["type": "text", "text": ["content": "Artista Teste"]]]],
+                "Bio": ["rich_text": [["type": "text", "text": ["content": "Bio teste"]]]],
+                "Foto": ["files": [["name": "artista.jpg", "type": "external", "external": ["url": "https://example.com/artista.jpg"]]]],
+            ] as [String: Any],
         ]),
-        "artist encodes id and raw Swift property values"
+        "artist encodes Notion-shaped values without id"
     )
 
-    let artEncoder = JSONEncoder()
-    artEncoder.dateEncodingStrategy = .iso8601
-    let encodedArt = try JSONSerialization.jsonObject(with: artEncoder.encode(art)) as! [String: Any]
-    let encodedArtProperties = encodedArt["properties"] as! [String: Any]
-    check(encodedArt["id"] as? String == "22222222-2222-2222-2222-222222222222", "art encodes id")
-    check(encodedArtProperties["Nome"] as? String == "Obra Teste", "art title encodes as its Swift value")
-    check(encodedArtProperties["Foto Principal"] as? String == "https://example.com/main.jpg", "art single file URL encodes as-is")
+    let encodedArt = try JSONSerialization.jsonObject(with: JSONEncoder().encode(art)) as! [String: Any]
+    check(encodedArt["id"] == nil, "art output has no top-level id")
     check(
-        encodedArtProperties["Fotos Extras"] as? [String] == ["https://example.com/extra1.jpg", "https://example.com/extra2.jpg"],
-        "art file URLs encode as-is"
-    )
-    check(encodedArtProperties["Data"] as? String == "2026-09-07T00:00:00Z", "art date encodes through the caller's strategy")
-    check(
-        encodedArtProperties["Artistas"] as? [String] == ["4D195B29-4B07-41DE-8029-6C0D9E607E4B"],
-        "art relation ids encode as UUID strings"
+        normalizedJSON(encodedArt["properties"] as! [String: Any]) ==
+        normalizedJSON([
+            "Nome": ["title": [["type": "text", "text": ["content": "Obra Teste"]]]],
+            "Foto Principal": ["files": [["name": "main.jpg", "type": "external", "external": ["url": "https://example.com/main.jpg"]]]],
+            "Fotos Extras": ["files": [
+                ["name": "extra1.jpg", "type": "external", "external": ["url": "https://example.com/extra1.jpg"]],
+                ["name": "extra2.jpg", "type": "external", "external": ["url": "https://example.com/extra2.jpg"]],
+            ]],
+            "Descrição": ["rich_text": [["type": "text", "text": ["content": "Descrição teste"]]]],
+            "Evento": ["rich_text": [["type": "text", "text": ["content": "Evento teste"]]]],
+            "Endereço": ["rich_text": [["type": "text", "text": ["content": "Endereço teste"]]]],
+            "Coordenadas": ["rich_text": [["type": "text", "text": ["content": "-3.73, -38.49"]]]],
+            "Data": ["date": ["start": "2026-09-07"]],
+            "Artistas": ["relation": [["id": "4D195B29-4B07-41DE-8029-6C0D9E607E4B"]]],
+        ] as [String: Any]),
+        "art encodes Notion-shaped title, files, rich text, date and relation"
     )
 
-    let encodedEvent = try JSONSerialization.jsonObject(with: artEncoder.encode(event)) as! [String: Any]
-    let encodedEventProperties = encodedEvent["properties"] as! [String: Any]
+    let timedArtProperties = (try JSONSerialization.jsonObject(with: JSONEncoder().encode(timedArt)) as! [String: Any])["properties"] as! [String: Any]
+    let timedDateStart = (timedArtProperties["Data"] as? [String: Any])?["date"].flatMap { ($0 as? [String: Any])?["start"] } as? String
+    check(timedDateStart == "2026-09-07T15:00:00Z", "a timed date encodes as ISO-8601, not date-only")
+
+    let encodedEvent = try JSONSerialization.jsonObject(with: JSONEncoder().encode(event)) as! [String: Any]
     check(
-        encodedEventProperties["Data"] as? [String] == ["2026-09-07T00:00:00Z", "2026-09-10T00:00:00Z"],
-        "date range encodes as its Swift bounds"
+        normalizedJSON(encodedEvent["properties"] as! [String: Any]) ==
+        normalizedJSON([
+            "Nome": ["title": [["type": "text", "text": ["content": "Evento"]]]],
+            "Data": ["date": ["start": "2026-09-07", "end": "2026-09-10"]],
+            "Início": ["date": ["start": "2026-09-01"]],
+            "Convidados": ["relation": [["id": "77777777-7777-7777-7777-777777777777"]]],
+        ] as [String: Any]),
+        "event encodes a Notion date range and relation"
     )
-    check(encodedEventProperties["Início"] as? String == "2026-09-01T00:00:00Z", "date start encodes through the caller's strategy")
+
+    let blank = try JSONDecoder().decode(BlankDTO.self, from: Data("{\"properties\":{}}".utf8))
     check(
-        encodedEventProperties["Convidados"] as? [String] == ["77777777-7777-7777-7777-777777777777"],
-        "event relation ids encode as UUID strings"
+        normalizedJSON(try JSONSerialization.jsonObject(with: JSONEncoder().encode(blank))) ==
+        normalizedJSON([
+            "properties": [
+                "Nome": ["title": [] as [[String: Any]]],
+                "Bio": ["rich_text": [] as [[String: Any]]],
+            ] as [String: Any],
+        ]),
+        "an empty string encodes as an empty array (Notion clear)"
     )
 
     check(
@@ -522,23 +548,23 @@ do {
     let encodedFeedback = normalizedJSON(try JSONSerialization.jsonObject(with: JSONEncoder().encode(feedback)))
     check(
         encodedFeedback == normalizedJSON([
-            "id": "99999999-9999-9999-9999-999999999999",
             "properties": [
-                "Nome": "Feedback",
-                "Publicado": true,
-                "Nota": 8,
-                "Peso": 1.5,
-                "Ativo": true,
-            ],
+                "Nome": ["title": [["type": "text", "text": ["content": "Feedback"]]]],
+                "Publicado": ["checkbox": true],
+                "Nota": ["number": 8],
+                "Peso": ["number": 1.5],
+                "Ativo": ["checkbox": true],
+            ] as [String: Any],
         ]),
-        "feedback encodes checkbox and number values"
+        "feedback encodes checkbox and number in Notion shape"
     )
 
     let encodedEmptyFeedback = try JSONSerialization.jsonObject(with: JSONEncoder().encode(emptyFeedback)) as! [String: Any]
     let encodedEmptyFeedbackProperties = encodedEmptyFeedback["properties"] as! [String: Any]
     check(encodedEmptyFeedbackProperties["Nota"] == nil, "nil number property is omitted")
     check(encodedEmptyFeedbackProperties["Peso"] == nil, "nil inferred number property is omitted")
-    check(encodedEmptyFeedbackProperties["Ativo"] as? Bool == false, "explicit false checkbox still encodes")
+    check((encodedEmptyFeedbackProperties["Ativo"] as? [String: Any])?["checkbox"] as? Bool == false, "explicit false checkbox still encodes")
+
 
     print("OK")
 } catch {
