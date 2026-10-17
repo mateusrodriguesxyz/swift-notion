@@ -455,6 +455,35 @@ do {
             "negated rich text filter encodes to Notion shape"
         )
 
+        let bioContainsPredicate = #Predicate<ArtistDTO> { $0.bio.contains("hell") }
+        let bioContainsFilter = try notionFilter(bioContainsPredicate)
+        check(
+            bioContainsFilter == .richText("Bio", .contains("hell")),
+            "predicate rich text contains converts"
+        )
+        check(
+            encodedFilter(bioContainsFilter) == normalizedJSON(["property": "Bio", "rich_text": ["contains": "hell"]]),
+            "predicate-derived rich text contains filter encodes to Notion shape"
+        )
+
+        let factoryBioContainsFilter: NotionFilter = try .predicate(bioContainsPredicate)
+        check(
+            factoryBioContainsFilter == bioContainsFilter,
+            "NotionFilter.predicate factory agrees with notionFilter for rich text contains"
+        )
+
+        let negatedBioContainsPredicate = #Predicate<ArtistDTO> { !$0.bio.contains("hell") }
+        check(
+            try notionFilter(negatedBioContainsPredicate) == .richText("Bio", .doesNotContain("hell")),
+            "negated rich text contains converts to does_not_contain"
+        )
+
+        let titleContainsPredicate = #Predicate<ArtistDTO> { $0.name.contains("Art") }
+        check(
+            try notionFilter(titleContainsPredicate) == .title("Nome", .contains("Art")),
+            "predicate title contains converts"
+        )
+
         do {
             let extraURL = URL(string: "https://example.com/extra1.jpg")!
             _ = try notionFilter(#Predicate<ArtDTO> { $0.extraPhotoURLs.contains(extraURL) })   // files, not relation

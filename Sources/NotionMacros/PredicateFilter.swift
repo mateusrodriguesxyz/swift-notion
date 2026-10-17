@@ -163,6 +163,36 @@ where LHS: NotionFilterOperandExpression, RHS: NotionFilterOperandExpression {
     }
 }
 
+/// `$0.text.contains("x")` -> `contains` on the title or rich text property (or
+/// `does_not_contain` when negated). `String.contains(_:)` builds
+/// `CollectionContainsCollection`, distinct from the `SequenceContains` built by
+/// `relationIDs.contains(id)`. Its operands are labelled `base`/`other`.
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.CollectionContainsCollection: NotionFilterExpression, NotionNegatableExpression
+where Base: NotionFilterOperandExpression, Other: NotionFilterOperandExpression {
+    func notionFilter() throws -> NotionFilter { try filter(negated: false) }
+    func negatedFilter() throws -> NotionFilter { try filter(negated: true) }
+
+    private func filter(negated: Bool) throws -> NotionFilter {
+        let lhs = try base.operand()
+        let rhs = try other.operand()
+        switch (lhs, rhs) {
+        case (.field(let field), .string(let value)):
+            let condition: TextCondition = negated ? .doesNotContain(value) : .contains(value)
+            switch field.kind {
+            case .title:
+                return .title(field.name, condition)
+            case .richText:
+                return .richText(field.name, condition)
+            default:
+                throw NotionFilterConversionError.unsupportedField(field.name)
+            }
+        default:
+            throw NotionFilterConversionError.unsupportedOperands("\(lhs) vs \(rhs)")
+        }
+    }
+}
+
 /// `$0.files.isEmpty` -> `files` `is_empty` (or `is_not_empty` when negated).
 /// The `isEmpty` key path is resolved against the concrete `[URL]` files shape,
 /// not `Collection` (a `Collection`-constrained comparison fails at runtime).
@@ -197,10 +227,11 @@ where Wrapped: NotionNegatableExpression {
 /// Converts a `Predicate` over a `NotionPage` type into a `NotionFilter` by
 /// tree-walking its expression. Supported root nodes are `Equal`/`NotEqual`
 /// (title and rich text equality, and `== nil`/`!= nil` on files), `SequenceContains`
-/// (relation `contains`), `KeyPath` (`$0.files.isEmpty` -> files `is_empty`) and
-/// `Negation` of any negatable leaf (text `does_not_equal`, relation
-/// `does_not_contain`, files `is_not_empty`); every other shape throws
-/// `NotionFilterConversionError`.
+/// (relation `contains`), `CollectionContainsCollection` (title/rich text
+/// `contains`, e.g. `$0.bio.contains("x")`), `KeyPath` (`$0.files.isEmpty` ->
+/// files `is_empty`) and `Negation` of any negatable leaf (text `does_not_equal`,
+/// `does_not_contain`, relation `does_not_contain`, files `is_not_empty`); every
+/// other shape throws `NotionFilterConversionError`.
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
     guard let expression = predicate.expression as? any NotionFilterExpression else {
