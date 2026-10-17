@@ -37,8 +37,8 @@ public struct NotionClient {
     }
     /// Queries a data source. `filter` narrows the results; when `nil` the
     /// request is sent with no body.
-    public func fetchDataSource<T: Decodable>(id: String, filter: NotionFilter? = nil) async throws -> [T] {
-        guard let url = URL(string: "https://api.notion.com/v1/data_sources/\(id)/query") else {
+    public func fetchPages<T: Decodable>(dataSourceID: String, filter: NotionFilter? = nil) async throws -> [T] {
+        guard let url = URL(string: "https://api.notion.com/v1/data_sources/\(dataSourceID)/query") else {
             throw URLError(.badURL)
         }
 
