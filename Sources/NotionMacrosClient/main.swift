@@ -484,6 +484,30 @@ do {
             "predicate title contains converts"
         )
 
+        let titleStartsWithPredicate = #Predicate<ArtistDTO> { $0.name.starts(with: "Art") }
+        let titleStartsWithFilter = try notionFilter(titleStartsWithPredicate)
+        check(
+            titleStartsWithFilter == .title("Nome", .startsWith("Art")),
+            "predicate title starts-with converts"
+        )
+        check(
+            encodedFilter(titleStartsWithFilter) == normalizedJSON(["property": "Nome", "title": ["starts_with": "Art"]]),
+            "predicate-derived title starts-with filter encodes to Notion shape"
+        )
+
+        let bioStartsWithPredicate = #Predicate<ArtistDTO> { $0.bio.starts(with: "Bio") }
+        check(
+            try notionFilter(bioStartsWithPredicate) == .richText("Bio", .startsWith("Bio")),
+            "predicate rich text starts-with converts"
+        )
+
+        do {
+            _ = try notionFilter(#Predicate<ArtistDTO> { !$0.name.starts(with: "Art") })
+            check(false, "negated starts-with rejects as not expressible")
+        } catch NotionFilterConversionError.unsupportedRoot {
+            check(true, "negated starts-with rejects as unsupportedRoot")
+        }
+
         do {
             let extraURL = URL(string: "https://example.com/extra1.jpg")!
             _ = try notionFilter(#Predicate<ArtDTO> { $0.extraPhotoURLs.contains(extraURL) })   // files, not relation

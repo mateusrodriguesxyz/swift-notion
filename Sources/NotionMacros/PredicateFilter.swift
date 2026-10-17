@@ -193,6 +193,32 @@ where Base: NotionFilterOperandExpression, Other: NotionFilterOperandExpression 
     }
 }
 
+/// `$0.text.starts(with: "x")` -> `starts_with` on the title or rich text
+/// property. `String.starts(with:)` builds `SequenceStartsWith`, whose operands
+/// are labelled `base`/`prefix`. Notion has no "does not start with", so this is
+/// not `NotionNegatableExpression`: `!$0.text.starts(with:)` fails the root cast.
+@available(macOS 14.0, iOS 17.0, *)
+extension PredicateExpressions.SequenceStartsWith: NotionFilterExpression
+where Base: NotionFilterOperandExpression, Prefix: NotionFilterOperandExpression {
+    func notionFilter() throws -> NotionFilter {
+        let lhs = try base.operand()
+        let rhs = try prefix.operand()
+        switch (lhs, rhs) {
+        case (.field(let field), .string(let value)):
+            switch field.kind {
+            case .title:
+                return .title(field.name, .startsWith(value))
+            case .richText:
+                return .richText(field.name, .startsWith(value))
+            default:
+                throw NotionFilterConversionError.unsupportedField(field.name)
+            }
+        default:
+            throw NotionFilterConversionError.unsupportedOperands("\(lhs) vs \(rhs)")
+        }
+    }
+}
+
 /// `$0.files.isEmpty` -> `files` `is_empty` (or `is_not_empty` when negated).
 /// The `isEmpty` key path is resolved against the concrete `[URL]` files shape,
 /// not `Collection` (a `Collection`-constrained comparison fails at runtime).
@@ -228,10 +254,12 @@ where Wrapped: NotionNegatableExpression {
 /// tree-walking its expression. Supported root nodes are `Equal`/`NotEqual`
 /// (title and rich text equality, and `== nil`/`!= nil` on files), `SequenceContains`
 /// (relation `contains`), `CollectionContainsCollection` (title/rich text
-/// `contains`, e.g. `$0.bio.contains("x")`), `KeyPath` (`$0.files.isEmpty` ->
+/// `contains`, e.g. `$0.bio.contains("x")`), `SequenceStartsWith` (title/rich
+/// text `starts(with:)`), `KeyPath` (`$0.files.isEmpty` ->
 /// files `is_empty`) and `Negation` of any negatable leaf (text `does_not_equal`,
 /// `does_not_contain`, relation `does_not_contain`, files `is_not_empty`); every
-/// other shape throws `NotionFilterConversionError`.
+/// other shape throws `NotionFilterConversionError`. `starts(with:)` is not
+/// negatable, since Notion has no "does not start with".
 @available(macOS 14.0, iOS 17.0, *)
 public func notionFilter<Root: NotionPage>(_ predicate: Predicate<Root>) throws -> NotionFilter {
     guard let expression = predicate.expression as? any NotionFilterExpression else {
