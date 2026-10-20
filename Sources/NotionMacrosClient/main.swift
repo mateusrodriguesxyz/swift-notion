@@ -566,6 +566,58 @@ do {
             "negated file == nil converts to is_not_empty"
         )
 
+        let publishedPredicate = #Predicate<FeedbackDTO> { $0.published == true }
+        let publishedFilter = try notionFilter(publishedPredicate)
+        check(publishedFilter == .checkbox("Publicado", equals: true), "predicate checkbox equality converts")
+        check(
+            encodedFilter(publishedFilter) == normalizedJSON(["property": "Publicado", "checkbox": ["equals": true]]),
+            "predicate-derived checkbox filter encodes to Notion shape"
+        )
+
+        let unpublishedPredicate = #Predicate<FeedbackDTO> { $0.published == false }
+        check(
+            try notionFilter(unpublishedPredicate) == .checkbox("Publicado", equals: false),
+            "predicate checkbox false equality converts"
+        )
+
+        let bareCheckboxPredicate = #Predicate<FeedbackDTO> { $0.published }
+        let bareCheckboxFilter = try notionFilter(bareCheckboxPredicate)
+        check(bareCheckboxFilter == .checkbox("Publicado", equals: true), "bare checkbox key path converts to equals true")
+        check(
+            encodedFilter(bareCheckboxFilter) == normalizedJSON(["property": "Publicado", "checkbox": ["equals": true]]),
+            "bare checkbox filter encodes to Notion shape"
+        )
+
+        let negatedCheckboxPredicate = #Predicate<FeedbackDTO> { !$0.published }
+        check(
+            try notionFilter(negatedCheckboxPredicate) == .checkbox("Publicado", equals: false),
+            "negated bare checkbox converts to equals false"
+        )
+
+        let uncheckedPredicate = #Predicate<FeedbackDTO> { $0.published != true }
+        check(
+            try notionFilter(uncheckedPredicate) == .checkbox("Publicado", equals: false),
+            "checkbox != true converts to equals false"
+        )
+
+        let invertedCheckboxPredicate = #Predicate<FeedbackDTO> { !($0.published == true) }
+        check(
+            try notionFilter(invertedCheckboxPredicate) == .checkbox("Publicado", equals: false),
+            "negated checkbox equality converts to equals false"
+        )
+
+        let inferredCheckboxPredicate = #Predicate<FeedbackDTO> { $0.active == false }
+        check(
+            try notionFilter(inferredCheckboxPredicate) == .checkbox("Ativo", equals: false),
+            "@NotionProperty Bool maps to checkbox equality"
+        )
+
+        let factoryCheckboxFilter: NotionFilter = try .predicate(publishedPredicate)
+        check(
+            factoryCheckboxFilter == publishedFilter,
+            "NotionFilter.predicate factory agrees with notionFilter for checkbox equality"
+        )
+
         do {
             let someURL = URL(string: "https://example.com/main.jpg")!
             _ = try notionFilter(#Predicate<ArtDTO> { $0.mainPhotoURL == someURL })
