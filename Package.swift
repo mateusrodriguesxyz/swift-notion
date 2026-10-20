@@ -31,5 +31,9 @@ let package = Package(
             name: "NotionMacrosClient",
             dependencies: ["NotionMacros"],
         ),
+        .testTarget(
+            name: "NotionMacrosTests",
+            dependencies: ["NotionMacros"],
+        ),
     ]
 )
