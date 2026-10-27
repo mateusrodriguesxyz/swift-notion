@@ -27,7 +27,7 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
             .compactMap { prop -> String? in
                 if prop.attribute == "NotionRelation" && prop.relatedType != nil {
                     // This is a @NotionRelationQuery - decode into _identifier
-                    return "self._\(prop.identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(prop.identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+                    return "self._\(prop.identifier) = (try? properties.decode(NotionDecoding.Relation.self, forKey: .\(prop.identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
                 }
                 return decodeLine(for: prop.attribute, identifier: prop.identifier)
             }
@@ -76,7 +76,7 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
             .map { prop -> String in
                 if prop.attribute == "NotionRelation" && prop.relatedType != nil {
                     // @NotionRelationQuery - encode the backing store _identifier
-                    return "try properties.encode(SwiftNotion.NotionEncoding.Relation(ids: self._\(prop.identifier)), forKey: .\(prop.identifier))"
+                    return "try properties.encode(NotionEncoding.Relation(ids: self._\(prop.identifier)), forKey: .\(prop.identifier))"
                 }
                 return encodeLine(for: prop)
             }
@@ -132,11 +132,11 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         let entries = properties
             .map { prop -> String in
                 let keyPath = (prop.attribute == "NotionRelation" && prop.relatedType != nil) ? "_\(prop.identifier)" : prop.identifier
-                return "        \\\(typeName).\(keyPath): SwiftNotion.NotionField(name: \"\(prop.key)\", kind: .\(notionKind(for: prop.attribute)))"
+                return "        \\\(typeName).\(keyPath): NotionField(name: \"\(prop.key)\", kind: .\(notionKind(for: prop.attribute)))"
             }
             .joined(separator: ",\n")
         let property = [
-            "\(access)static var notionProperties: [PartialKeyPath<\(typeName)>: SwiftNotion.NotionField] {",
+            "\(access)static var notionProperties: [PartialKeyPath<\(typeName)>: NotionField] {",
             "    [",
             entries,
             "    ]",
@@ -144,7 +144,7 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         ].joined(separator: "\n")
 
         let extensionSource = """
-        extension \(typeName): SwiftNotion.NotionPage, Encodable {
+        extension \(typeName): NotionPage, Encodable {
         \(property)
         }
         """
@@ -356,25 +356,25 @@ private func notionKind(for attribute: String) -> String {
 private func decodeLine(for attribute: String, identifier: String) -> String? {
     switch attribute {
     case "NotionTitle":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Title.self, forKey: .\(identifier)))?.title.first?.plainText ?? \"\""
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Title.self, forKey: .\(identifier)))?.title.first?.plainText ?? \"\""
     case "NotionRichText":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.RichText.self, forKey: .\(identifier)))?.richText.first?.plainText ?? \"\""
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.RichText.self, forKey: .\(identifier)))?.richText.first?.plainText ?? \"\""
     case "NotionFile":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.first.flatMap(URL.init(string:))"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.first.flatMap(URL.init(string:))"
     case "NotionFiles":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.compactMap(URL.init(string:)) ?? []"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.compactMap(URL.init(string:)) ?? []"
     case "NotionDateStart":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date?.start.flatMap(SwiftNotion.NotionDecoding.date(from:))"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date?.start.flatMap(NotionDecoding.date(from:))"
     case "NotionDateRange":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date.flatMap(SwiftNotion.NotionDecoding.range(from:))"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date.flatMap(NotionDecoding.range(from:))"
     case "NotionRelationIDs":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
     case "NotionRelation":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
     case "NotionCheckbox":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Checkbox.self, forKey: .\(identifier)))?.checkbox ?? false"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.Checkbox.self, forKey: .\(identifier)))?.checkbox ?? false"
     case "NotionNumber":
-        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.NumberValue.self, forKey: .\(identifier)))?.number"
+        return "self.\(identifier) = (try? properties.decode(NotionDecoding.NumberValue.self, forKey: .\(identifier)))?.number"
     default:
         return nil
     }
@@ -399,25 +399,25 @@ private func encodedValueExpression(for property: NotionPropertyInfo) -> String 
     let id = "self.\(property.identifier)"
     switch property.attribute {
     case "NotionTitle":
-        return "SwiftNotion.NotionEncoding.Title(content: \(id))"
+        return "NotionEncoding.Title(content: \(id))"
     case "NotionRichText":
-        return "SwiftNotion.NotionEncoding.RichText(content: \(id))"
+        return "NotionEncoding.RichText(content: \(id))"
     case "NotionFile":
-        return "\(id).map { SwiftNotion.NotionEncoding.File(url: $0) }"
+        return "\(id).map { NotionEncoding.File(url: $0) }"
     case "NotionFiles":
-        return "SwiftNotion.NotionEncoding.Files(urls: \(id))"
+        return "NotionEncoding.Files(urls: \(id))"
     case "NotionDateStart":
-        return "\(id).map { SwiftNotion.NotionEncoding.DateValue(start: $0) }"
+        return "\(id).map { NotionEncoding.DateValue(start: $0) }"
     case "NotionDateRange":
-        return "\(id).map { SwiftNotion.NotionEncoding.DateValue(start: $0.lowerBound, end: $0.upperBound) }"
+        return "\(id).map { NotionEncoding.DateValue(start: $0.lowerBound, end: $0.upperBound) }"
     case "NotionRelationIDs":
-        return "SwiftNotion.NotionEncoding.Relation(ids: \(id))"
+        return "NotionEncoding.Relation(ids: \(id))"
     case "NotionRelation":
-        return "SwiftNotion.NotionEncoding.Relation(ids: \(id))"
+        return "NotionEncoding.Relation(ids: \(id))"
     case "NotionCheckbox":
-        return "SwiftNotion.NotionEncoding.Checkbox(value: \(id))"
+        return "NotionEncoding.Checkbox(value: \(id))"
     case "NotionNumber":
-        return "\(id).map { SwiftNotion.NotionEncoding.Number(value: $0) }"
+        return "\(id).map { NotionEncoding.Number(value: $0) }"
     default:
         return id
     }

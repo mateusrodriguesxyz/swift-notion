@@ -9,7 +9,7 @@
 //
 
 import Foundation
-import SwiftNotion
+import Notion
 import Testing
 
 /// Checkbox examples: "Task completed" and the "Done" leaf of the compound example.

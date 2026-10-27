@@ -6,7 +6,7 @@
 //  https://developers.notion.com/reference/filter-data-source-entries.
 
 import Foundation
-import SwiftNotion
+import Notion
 import Testing
 
 @Suite

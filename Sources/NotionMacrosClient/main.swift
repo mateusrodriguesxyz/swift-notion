@@ -1,4 +1,4 @@
-import SwiftNotion
+import Notion
 import Foundation
 
 @NotionPage
