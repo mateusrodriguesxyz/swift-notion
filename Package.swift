@@ -5,9 +5,9 @@ import PackageDescription
 import CompilerPluginSupport
 
 let package = Package(
-    name: "NotionMacros",
+    name: "SwiftNotion",
     products: [
-        .library(name: "NotionMacros", targets: ["NotionMacros"]),
+        .library(name: "SwiftNotion", targets: ["SwiftNotion"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "604.0.0-latest"),
@@ -21,7 +21,7 @@ let package = Package(
             ]
         ),
         .target(
-            name: "NotionMacros",
+            name: "SwiftNotion",
             dependencies: ["NotionMacrosImplementation"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
@@ -29,11 +29,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "NotionMacrosClient",
-            dependencies: ["NotionMacros"],
+            dependencies: ["SwiftNotion"],
         ),
         .testTarget(
             name: "NotionMacrosTests",
-            dependencies: ["NotionMacros"],
+            dependencies: ["SwiftNotion"],
         ),
     ]
 )

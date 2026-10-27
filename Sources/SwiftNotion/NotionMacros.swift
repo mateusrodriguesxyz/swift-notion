@@ -30,14 +30,14 @@ public enum Notion {
     
 }
 
-public struct NotionClient {
+public struct NotionClient: Sendable {
     let bearerToken: String
     public init(bearerToken: String) {
         self.bearerToken = bearerToken
     }
     /// Queries a data source. `filter` narrows the results; when `nil` the
     /// request is sent with no body.
-    public func fetchPages<T: Decodable>(dataSourceID: String, filter: NotionFilter? = nil) async throws -> [T] {
+    public func fetchPages<T: NotionPage>(dataSourceID: String, filter: NotionFilter? = nil) async throws -> [T] {
         guard let url = URL(string: "https://api.notion.com/v1/data_sources/\(dataSourceID)/query") else {
             throw URLError(.badURL)
         }
@@ -60,7 +60,11 @@ public struct NotionClient {
         let (data, _) = try await URLSession.shared.data(for: request)
 
         let response = try JSONDecoder().decode(Response<T>.self, from: data)
-        return response.results
+        var results = response.results
+        for index in results.indices {
+            try await results[index]._fetchRelations(using: self)
+        }
+        return results
     }
 
     /// Fetches a single page by its Notion page id. The response is one page
@@ -124,3 +128,11 @@ public macro NotionNumber(_ key: String) = #externalMacro(module: "NotionMacrosI
 ///  The title and relation properties are not inferred; use `@NotionTitle` and `@NotionRelationIDs` for those.
 @attached(peer, names: arbitrary)
 public macro NotionProperty(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionPropertyMacro")
+
+/// Declares a relation property that fetches related `@NotionPage` objects.
+/// The property type must be an array of a `@NotionPage` type, e.g. `[Song]`.
+/// Generates a private `_propertyName: [UUID]` backing store for relation IDs,
+/// a public `propertyName: [RelatedType] = []` for fetched objects,
+/// and a `_fetchRelations(using:)` method that fetches all related pages.
+@attached(peer, names: arbitrary)
+public macro NotionRelationQuery(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionRelationQueryMacro")

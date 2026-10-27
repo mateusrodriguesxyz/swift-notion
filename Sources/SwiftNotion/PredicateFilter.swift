@@ -1,6 +1,6 @@
 //
 //  PredicateFilter.swift
-//  NotionMacros
+//  SwiftNotion
 //
 
 import Foundation

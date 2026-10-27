@@ -15,5 +15,6 @@ struct NotionMacrosPlugin: CompilerPlugin {
         NotionCheckboxMacro.self,
         NotionNumberMacro.self,
         NotionPropertyMacro.self,
+        NotionRelationQueryMacro.self,
     ]
 }

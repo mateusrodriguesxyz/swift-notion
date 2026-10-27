@@ -1,6 +1,6 @@
 //
 //  NotionPropertyInfo.swift
-//  NotionMacros
+//  SwiftNotion
 //
 //  Created by Mateus Rodrigues on 11/10/26.
 //
@@ -14,4 +14,6 @@ struct NotionPropertyInfo {
     /// `true` when the declared property type is optional, so the generated
     /// encoder picks `encodeIfPresent` instead of `encode`.
     let isOptional: Bool
+    /// For `@NotionRelationQuery`, the element type of the array (e.g. "Song" from `[Song]`).
+    let relatedType: String?
 }

@@ -1,4 +1,4 @@
-import NotionMacros
+import SwiftNotion
 import Foundation
 
 @NotionPage
@@ -44,6 +44,20 @@ struct FeedbackDTO: Decodable {
     @NotionNumber("Nota") var score: Double?
     @NotionProperty("Peso") var weight: Double?
     @NotionProperty("Ativo") var active: Bool
+}
+
+/// A `@NotionPage` type for testing @NotionRelationQuery.
+@NotionPage
+struct SongDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+}
+
+/// A `@NotionPage` type with multiple @NotionRelationQuery properties.
+@NotionPage
+struct AlbumDTO: Decodable {
+    @NotionTitle("Nome") var name: String
+    @NotionRelationQuery("Músicas") var songs: [SongDTO]
+    @NotionRelationQuery("Artistas") var artists: [ArtistDTO]
 }
 
 /// Used to prove an empty string encodes as an empty array (Notion's clear).
@@ -174,6 +188,35 @@ let feedbackEmptyNumberJSON = """
     "Nome": { "type": "title", "title": [ { "plain_text": "Feedback vazio" } ] },
     "Nota": { "type": "number", "number": null },
     "Ativo": { "type": "checkbox", "checkbox": false }
+  }
+}
+""".data(using: .utf8)!
+
+let song1JSON = """
+{
+  "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Música 1" } ] }
+  }
+}
+""".data(using: .utf8)!
+
+let song2JSON = """
+{
+  "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Música 2" } ] }
+  }
+}
+""".data(using: .utf8)!
+
+let albumJSON = """
+{
+  "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+  "properties": {
+    "Nome": { "type": "title", "title": [ { "plain_text": "Álbum Teste" } ] },
+    "Músicas": { "type": "relation", "relation": [ { "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" }, { "id": "cccccccc-cccc-cccc-cccc-cccccccccccc" } ] },
+    "Artistas": { "type": "relation", "relation": [ { "id": "11111111-1111-1111-1111-111111111111" } ] }
   }
 }
 """.data(using: .utf8)!
@@ -670,6 +713,34 @@ do {
     check(encodedEmptyFeedbackProperties["Peso"] == nil, "nil inferred number property is omitted")
     check((encodedEmptyFeedbackProperties["Ativo"] as? [String: Any])?["checkbox"] as? Bool == false, "explicit false checkbox still encodes")
 
+    // Test @NotionRelationQuery
+    let album = try JSONDecoder().decode(AlbumDTO.self, from: albumJSON)
+    check(album.id == UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd")!, "album id decoded as UUID")
+    check(album.name == "Álbum Teste", "album title decoded")
+    check(album._songs == [UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!, UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!], "album _songs relation IDs decoded")
+    check(album._artists == [UUID(uuidString: "11111111-1111-1111-1111-111111111111")!], "album _artists relation IDs decoded")
+    check(album.songs.isEmpty, "album songs initially empty")
+    check(album.artists.isEmpty, "album artists initially empty")
+
+    // Test notionProperties map uses backing store _propertyName
+    check(AlbumDTO.notionProperties[\.name] == NotionField(name: "Nome", kind: .title), "album title keypath maps to field")
+    check(AlbumDTO.notionProperties[\._songs] == NotionField(name: "Músicas", kind: .relation), "album _songs keypath maps to field")
+    check(AlbumDTO.notionProperties[\._artists] == NotionField(name: "Artistas", kind: .relation), "album _artists keypath maps to field")
+    check(AlbumDTO.notionProperties.count == 3, "album map has exactly the annotated properties")
+
+    // Test encode includes relation IDs from backing store
+    let encodedAlbum = try JSONSerialization.jsonObject(with: JSONEncoder().encode(album)) as! [String: Any]
+    check(encodedAlbum["id"] == nil, "album output has no top-level id")
+    let encodedAlbumProperties = encodedAlbum["properties"] as! [String: Any]
+    let musicasRelation = encodedAlbumProperties["Músicas"] as! [String: Any]
+    let musicasIds = (musicasRelation["relation"] as! [[String: String]]).map { $0["id"]! }.sorted()
+    check(musicasIds == ["BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB", "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"], "album encodes Músicas relation")
+    let artistasRelation = encodedAlbumProperties["Artistas"] as! [String: Any]
+    let artistasIds = (artistasRelation["relation"] as! [[String: String]]).map { $0["id"]! }
+    check(artistasIds == ["11111111-1111-1111-1111-111111111111"], "album encodes Artistas relation")
+
+    // The fact that this code compiles proves the generated methods exist.
+    // (Swift struct methods aren't visible via Objective-C selector reflection.)
 
     print("OK")
 } catch {

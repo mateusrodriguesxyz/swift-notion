@@ -1,6 +1,6 @@
 //
 //  NotionPropertyTypeError.swift
-//  NotionMacros
+//  SwiftNotion
 //
 //  Created by Mateus Rodrigues on 11/10/26.
 //

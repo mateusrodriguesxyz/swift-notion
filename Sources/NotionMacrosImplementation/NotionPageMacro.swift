@@ -22,8 +22,15 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
             .map { "        case \($0.identifier) = \"\($0.key)\"" }
             .joined(separator: "\n")
 
+        // For @NotionRelationQuery, decode into the backing store (_identifier)
         let decodeLines = properties
-            .compactMap { decodeLine(for: $0.attribute, identifier: $0.identifier) }
+            .compactMap { prop -> String? in
+                if prop.attribute == "NotionRelation" && prop.relatedType != nil {
+                    // This is a @NotionRelationQuery - decode into _identifier
+                    return "self._\(prop.identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(prop.identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+                }
+                return decodeLine(for: prop.attribute, identifier: prop.identifier)
+            }
             .joined(separator: "\n        ")
 
         let codingKeys = """
@@ -41,17 +48,38 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
 
         let idProperty = "\(access)let id: UUID"
 
+        // Generate backing store properties for @NotionRelationQuery
+        let relationQueryProperties = properties
+            .filter { $0.attribute == "NotionRelation" && $0.relatedType != nil }
+            .map { prop in
+                return "\(access)var _\(prop.identifier): [UUID] = []"
+            }
+            .joined(separator: "\n")
+
+        // Initialize user's relation query properties to empty arrays in initializer
+        let relationQueryInits = properties
+            .filter { $0.attribute == "NotionRelation" && $0.relatedType != nil }
+            .map { "self.\($0.identifier) = []" }
+            .joined(separator: "\n        ")
+
         let initializer = """
         \(access)init(from decoder: Decoder) throws {
             let root = try decoder.container(keyedBy: CodingKeys.self)
             self.id = (try? root.decode(String.self, forKey: .id)).flatMap(UUID.init(uuidString:)) ?? UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
             let properties = try root.nestedContainer(keyedBy: PropertyKeys.self, forKey: .properties)
             \(decodeLines)
+            \(relationQueryInits.isEmpty ? "" : relationQueryInits)
         }
         """
 
         let encodeLines = properties
-            .map { encodeLine(for: $0) }
+            .map { prop -> String in
+                if prop.attribute == "NotionRelation" && prop.relatedType != nil {
+                    // @NotionRelationQuery - encode the backing store _identifier
+                    return "try properties.encode(SwiftNotion.NotionEncoding.Relation(ids: self._\(prop.identifier)), forKey: .\(prop.identifier))"
+                }
+                return encodeLine(for: prop)
+            }
             .joined(separator: "\n    ")
 
         // Emitted as a member, not through the extension expansion, so it is
@@ -69,13 +97,22 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         }
         """
 
-        return [
+        // Generate _fetchRelations and per-property fetch helpers
+        let fetchMethods = generateFetchMethods(for: properties, access: access)
+
+        var members: [DeclSyntax] = [
             DeclSyntax(stringLiteral: codingKeys),
             DeclSyntax(stringLiteral: propertyKeys),
             DeclSyntax(stringLiteral: idProperty),
-            DeclSyntax(stringLiteral: initializer),
-            DeclSyntax(stringLiteral: encoder),
         ]
+        if !relationQueryProperties.isEmpty {
+            members.append(DeclSyntax(stringLiteral: relationQueryProperties))
+        }
+        members.append(DeclSyntax(stringLiteral: initializer))
+        members.append(DeclSyntax(stringLiteral: encoder))
+        members.append(contentsOf: fetchMethods)
+
+        return members
     }
 
     public static func expansion(
@@ -93,10 +130,13 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         let typeName = type.trimmedDescription
 
         let entries = properties
-            .map { "        \\\(typeName).\($0.identifier): NotionMacros.NotionField(name: \"\($0.key)\", kind: .\(notionKind(for: $0.attribute)))" }
+            .map { prop -> String in
+                let keyPath = (prop.attribute == "NotionRelation" && prop.relatedType != nil) ? "_\(prop.identifier)" : prop.identifier
+                return "        \\\(typeName).\(keyPath): SwiftNotion.NotionField(name: \"\(prop.key)\", kind: .\(notionKind(for: prop.attribute)))"
+            }
             .joined(separator: ",\n")
         let property = [
-            "\(access)static var notionProperties: [PartialKeyPath<\(typeName)>: NotionMacros.NotionField] {",
+            "\(access)static var notionProperties: [PartialKeyPath<\(typeName)>: SwiftNotion.NotionField] {",
             "    [",
             entries,
             "    ]",
@@ -104,7 +144,7 @@ public struct NotionPageMacro: MemberMacro, ExtensionMacro {
         ].joined(separator: "\n")
 
         let extensionSource = """
-        extension \(typeName): NotionMacros.NotionPage, Encodable {
+        extension \(typeName): SwiftNotion.NotionPage, Encodable {
         \(property)
         }
         """
@@ -119,6 +159,8 @@ private struct ScannedProperty {
     let rawAttribute: String
     let key: String
     let type: TypeSyntax?
+    /// For `@NotionRelationQuery`, the element type of the array (e.g. "Song" from `[Song]`).
+    let relatedType: String?
 }
 
 /// Scans a `@NotionPage` type for its `@Notion*`-annotated stored properties.
@@ -148,11 +190,24 @@ private func scannedProperties(of declaration: some DeclGroupSyntax) -> [Scanned
             }
             .first
         guard let (rawAttribute, key) = notionAttribute else { continue }
+        
+        // For @NotionRelationQuery, extract the element type from the array (e.g., [Song] -> "Song")
+        var relatedType: String? = nil
+        if rawAttribute == "NotionRelationQuery",
+           let type = binding.typeAnnotation?.type {
+            let inner = type.as(OptionalTypeSyntax.self)?.wrappedType ?? type
+            if let array = inner.as(ArrayTypeSyntax.self),
+               let element = array.element.as(IdentifierTypeSyntax.self) {
+                relatedType = element.name.text
+            }
+        }
+        
         scanned.append(ScannedProperty(
             identifier: identifier,
             rawAttribute: rawAttribute,
             key: key ?? identifier,
-            type: binding.typeAnnotation?.type
+            type: binding.typeAnnotation?.type,
+            relatedType: relatedType
         ))
     }
     return scanned
@@ -182,6 +237,16 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
                 throw NotionPropertyTypeError(description:
                     "`@NotionRelationIDs` on '\(scanned.identifier)' requires a `[UUID]` property, got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
             }
+        } else if attribute == "NotionRelation" {
+            // @NotionRelation accepts any array type; decoding/encoding uses Relation type
+        } else if attribute == "NotionRelationQuery" {
+            // @NotionRelationQuery requires an array of a @NotionPage type, e.g. [Song]
+            guard scanned.relatedType != nil else {
+                throw NotionPropertyTypeError(description:
+                    "`@NotionRelationQuery` on '\(scanned.identifier)' requires an array of a @NotionPage type (e.g., [Song]), got '\(scanned.type?.trimmedDescription ?? "<none>")'.")
+            }
+            // Treat as NotionRelation for decoding/encoding (relation IDs)
+            attribute = "NotionRelation"
         } else if attribute == "NotionCheckbox" {
             guard isBool(scanned.type) else {
                 throw NotionPropertyTypeError(description:
@@ -197,7 +262,8 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
             identifier: scanned.identifier,
             attribute: attribute,
             key: scanned.key,
-            isOptional: scanned.type?.is(OptionalTypeSyntax.self) ?? false
+            isOptional: scanned.type?.is(OptionalTypeSyntax.self) ?? false,
+            relatedType: scanned.relatedType
         ))
     }
     return properties
@@ -278,6 +344,7 @@ private func notionKind(for attribute: String) -> String {
     case "NotionDateStart": return "date"
     case "NotionDateRange": return "dateRange"
     case "NotionRelationIDs": return "relation"
+    case "NotionRelation": return "relation"
     case "NotionCheckbox": return "checkbox"
     case "NotionNumber": return "number"
     default: return "richText"
@@ -285,27 +352,29 @@ private func notionKind(for attribute: String) -> String {
 }
 
 /// Builds the `self.<identifier> = ...` line that decodes one Notion property
-/// using the shared value types from the `NotionMacros` library.
+/// using the shared value types from the `SwiftNotion` library.
 private func decodeLine(for attribute: String, identifier: String) -> String? {
     switch attribute {
     case "NotionTitle":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Title.self, forKey: .\(identifier)))?.title.first?.plainText ?? \"\""
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Title.self, forKey: .\(identifier)))?.title.first?.plainText ?? \"\""
     case "NotionRichText":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.RichText.self, forKey: .\(identifier)))?.richText.first?.plainText ?? \"\""
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.RichText.self, forKey: .\(identifier)))?.richText.first?.plainText ?? \"\""
     case "NotionFile":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.first.flatMap(URL.init(string:))"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.first.flatMap(URL.init(string:))"
     case "NotionFiles":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.compactMap(URL.init(string:)) ?? []"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Files.self, forKey: .\(identifier)))?.files.compactMap { $0.file?.url }.compactMap(URL.init(string:)) ?? []"
     case "NotionDateStart":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date?.start.flatMap(NotionMacros.NotionDecoding.date(from:))"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date?.start.flatMap(SwiftNotion.NotionDecoding.date(from:))"
     case "NotionDateRange":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date.flatMap(NotionMacros.NotionDecoding.range(from:))"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.DateValue.self, forKey: .\(identifier)))?.date.flatMap(SwiftNotion.NotionDecoding.range(from:))"
     case "NotionRelationIDs":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
+    case "NotionRelation":
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Relation.self, forKey: .\(identifier)))?.relation.compactMap { UUID(uuidString: $0.id) } ?? []"
     case "NotionCheckbox":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.Checkbox.self, forKey: .\(identifier)))?.checkbox ?? false"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.Checkbox.self, forKey: .\(identifier)))?.checkbox ?? false"
     case "NotionNumber":
-        return "self.\(identifier) = (try? properties.decode(NotionMacros.NotionDecoding.NumberValue.self, forKey: .\(identifier)))?.number"
+        return "self.\(identifier) = (try? properties.decode(SwiftNotion.NotionDecoding.NumberValue.self, forKey: .\(identifier)))?.number"
     default:
         return nil
     }
@@ -330,23 +399,25 @@ private func encodedValueExpression(for property: NotionPropertyInfo) -> String 
     let id = "self.\(property.identifier)"
     switch property.attribute {
     case "NotionTitle":
-        return "NotionMacros.NotionEncoding.Title(content: \(id))"
+        return "SwiftNotion.NotionEncoding.Title(content: \(id))"
     case "NotionRichText":
-        return "NotionMacros.NotionEncoding.RichText(content: \(id))"
+        return "SwiftNotion.NotionEncoding.RichText(content: \(id))"
     case "NotionFile":
-        return "\(id).map { NotionMacros.NotionEncoding.File(url: $0) }"
+        return "\(id).map { SwiftNotion.NotionEncoding.File(url: $0) }"
     case "NotionFiles":
-        return "NotionMacros.NotionEncoding.Files(urls: \(id))"
+        return "SwiftNotion.NotionEncoding.Files(urls: \(id))"
     case "NotionDateStart":
-        return "\(id).map { NotionMacros.NotionEncoding.DateValue(start: $0) }"
+        return "\(id).map { SwiftNotion.NotionEncoding.DateValue(start: $0) }"
     case "NotionDateRange":
-        return "\(id).map { NotionMacros.NotionEncoding.DateValue(start: $0.lowerBound, end: $0.upperBound) }"
+        return "\(id).map { SwiftNotion.NotionEncoding.DateValue(start: $0.lowerBound, end: $0.upperBound) }"
     case "NotionRelationIDs":
-        return "NotionMacros.NotionEncoding.Relation(ids: \(id))"
+        return "SwiftNotion.NotionEncoding.Relation(ids: \(id))"
+    case "NotionRelation":
+        return "SwiftNotion.NotionEncoding.Relation(ids: \(id))"
     case "NotionCheckbox":
-        return "NotionMacros.NotionEncoding.Checkbox(value: \(id))"
+        return "SwiftNotion.NotionEncoding.Checkbox(value: \(id))"
     case "NotionNumber":
-        return "\(id).map { NotionMacros.NotionEncoding.Number(value: $0) }"
+        return "\(id).map { SwiftNotion.NotionEncoding.Number(value: $0) }"
     default:
         return id
     }
@@ -365,4 +436,50 @@ func extractKey(from node: AttributeSyntax) -> String? {
     default:
         return nil
     }
+}
+
+/// Generates `_fetchRelations(using:)` and per-property fetch helpers for `@NotionRelationQuery`.
+private func generateFetchMethods(for properties: [NotionPropertyInfo], access: String) -> [DeclSyntax] {
+    let relationQueries = properties.filter { $0.attribute == "NotionRelation" && $0.relatedType != nil }
+    guard !relationQueries.isEmpty else { return [] }
+
+    var methods: [String] = []
+
+    // _fetchRelations(using:) - calls all per-property fetch helpers
+    let fetchRelationsCalls = relationQueries
+        .map { prop in
+            let capitalized = prop.identifier.prefix(1).uppercased() + prop.identifier.dropFirst()
+            return "        try await _fetch\(capitalized)(using: client)"
+        }
+        .joined(separator: "\n")
+
+    let fetchRelationsMethod = """
+    \(access)mutating func _fetchRelations(using client: NotionClient) async throws {
+    \(fetchRelationsCalls)
+    }
+    """
+    methods.append(fetchRelationsMethod)
+
+    // Per-property fetch helpers
+    for prop in relationQueries {
+        let capitalized = prop.identifier.prefix(1).uppercased() + prop.identifier.dropFirst()
+        let relatedType = prop.relatedType!
+        let fetchMethod = """
+    \(access)private mutating func _fetch\(capitalized)(using client: NotionClient) async throws {
+        self.\(prop.identifier) = try await withThrowingTaskGroup(of: \(relatedType).self) { group in
+            for id in _\(prop.identifier) {
+                group.addTask {
+                    try await client.fetchPage(pageID: id.uuidString.lowercased())
+                }
+            }
+            var results: [\(relatedType)] = []
+            for try await page in group { results.append(page) }
+            return results
+        }
+    }
+    """
+        methods.append(fetchMethod)
+    }
+
+    return methods.map { DeclSyntax(stringLiteral: $0) }
 }

@@ -1,6 +1,6 @@
 //
 //  NotionFilter.swift
-//  NotionMacros
+//  SwiftNotion
 //
 
 import Foundation

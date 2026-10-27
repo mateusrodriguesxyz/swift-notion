@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SwiftNotion}",
+            "name": "Debug NotionMacrosClient (SwiftNotion)",
+            "target": "NotionMacrosClient",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug NotionMacrosClient"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:SwiftNotion}",
+            "name": "Release NotionMacrosClient (SwiftNotion)",
+            "target": "NotionMacrosClient",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release NotionMacrosClient"
+        }
+    ]
+}

@@ -4,7 +4,7 @@
 //
 
 import Foundation
-import NotionMacros
+import SwiftNotion
 import Testing
 
 /// Reserializes JSON text with sorted keys and no whitespace, so comparisons
