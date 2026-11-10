@@ -4,7 +4,6 @@ struct Response<T: Decodable>: Decodable {
     let results: [T]
 }
 
-/// The request body of a data source query. Encodes as `{"filter": …}`.
 struct QueryBody: Encodable {
     let filter: NotionFilter
 }
@@ -107,21 +106,9 @@ public struct NotionClient: Sendable {
     
 }
 
-/// Declares a page model. The optional string argument is the Notion data
-/// source title resolved by `NotionClient.fetchPages(ofType:)`.
-///
-/// ```swift
-/// @NotionPage("Album")
-/// struct Album: Decodable {
-///     @NotionTitle("Name") var name: String
-/// }
-/// ```
 @attached(member, names: arbitrary)
 @attached(extension, conformances: NotionPage, Encodable, names: named(notionProperties), named(notionDataSourceTitle))
 public macro NotionPage(_ dataSourceTitle: String? = nil) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionPageMacro")
-
-@attached(peer, names: arbitrary)
-public macro NotionTitle(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionTitleMacro")
 
 @attached(peer, names: arbitrary)
 public macro NotionRichText(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionRichTextMacro")
@@ -147,11 +134,9 @@ public macro NotionCheckbox(_ key: String) = #externalMacro(module: "NotionMacro
 @attached(peer, names: arbitrary)
 public macro NotionNumber(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionNumberMacro")
 
-/// Maps an optional `String`-backed enum to a Notion select property.
 @attached(peer, names: arbitrary)
 public macro NotionSelect(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionSelectMacro")
 
-/// Maps an array of `String`-backed enum values to a Notion multi-select property.
 @attached(peer, names: arbitrary)
 public macro NotionMultiSelect(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionMultiSelectMacro")
 
@@ -165,15 +150,10 @@ public macro NotionMultiSelect(_ key: String) = #externalMacro(module: "NotionMa
 /// `Double?` (Number)
 /// `SomeEnum?` where `SomeEnum.RawValue == String` (Select)
 /// `[SomeEnum]` where `SomeEnum.RawValue == String` (Multi-select)
-///  The title and relation properties are not inferred; use `@NotionTitle` and `@NotionRelationIDs` for those.
+///  The title and relation properties are not inferred; use `@NotionTitleProperty` and `@NotionRelationProperty` for those.
 @attached(peer, names: arbitrary)
 public macro NotionProperty(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionPropertyMacro")
 
-/// Declares a relation property that fetches related `@NotionPage` objects.
-/// The property type must be an array of a `@NotionPage` type, e.g. `[Song]`.
-/// Generates a private `_propertyName: [UUID]` backing store for relation IDs,
-/// a public `propertyName: [RelatedType] = []` for fetched objects,
-/// and a `_fetchRelations(using:)` method that fetches all related pages.
 @attached(peer, names: arbitrary)
 public macro NotionRelationProperty(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionRelationPropertyMacro")
 
@@ -181,3 +161,10 @@ public macro NotionRelationProperty(_ key: String) = #externalMacro(module: "Not
 @available(*, deprecated, renamed: "NotionRelationProperty")
 @attached(peer, names: arbitrary)
 public macro NotionRelationQuery(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionRelationPropertyMacro")
+
+@attached(peer, names: arbitrary)
+public macro NotionTitleProperty(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionTitleMacro")
+
+@available(*, deprecated, renamed: "NotionTitleProperty")
+@attached(peer, names: arbitrary)
+public macro NotionTitle(_ key: String) = #externalMacro(module: "NotionMacrosImplementation", type: "NotionTitleMacro")
