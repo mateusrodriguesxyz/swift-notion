@@ -285,6 +285,11 @@ private func resolvedProperties(of declaration: some DeclGroupSyntax) throws -> 
     var properties: [NotionPropertyInfo] = []
     for scanned in scannedProperties(of: declaration) {
         var attribute = scanned.rawAttribute
+        // `@NotionTitleProperty` is the current spelling of the title attribute;
+        // `@NotionTitle` is its deprecated alias. Both must resolve to the same decoder.
+        if attribute == "NotionTitleProperty" {
+            attribute = "NotionTitle"
+        }
         if attribute == "NotionProperty" {
             guard let resolved = resolvedAttribute(for: scanned.type) else {
                 throw NotionPropertyTypeError(description:
